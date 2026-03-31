@@ -39,7 +39,7 @@ SUMMARY_MODEL = "qwen3:32b"
 OLLAMA_URL = "http://127.0.0.1:11434"
 RAG_LLM_MODEL = "qwen3:32b"
 RAG_EMBEDDING_MODEL = "qwen3-embedding:8b"
-RAG_EMBEDDING_DIM = 768
+RAG_EMBEDDING_DIM = 4096
 RAG_WORKING_DIR = "./test_course_knowledge_db"
 
 TEST_QUERY = "Hur öppnar man kontrollpanelen och vilka inställningar syns på skärmen?"
