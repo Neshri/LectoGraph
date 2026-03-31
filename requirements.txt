@@ -1,0 +1,27 @@
+# --- Primary PyTorch Index ---
+# This line forces pip to find PyTorch packages compatible with CUDA 12.1,
+# which works with your system's CUDA 12.4 driver.
+--extra-index-url https://download.pytorch.org/whl/cu121
+
+# --- Core AI and ML Dependencies ---
+# Pip will now install the latest versions of these from the index above.
+torch
+torchvision
+torchaudio
+tiktoken
+ctranslate2>=4.0.0
+faster-whisper>=1.0.0
+openai-whisper>=20240930
+transformers>=4.35.0
+
+# --- Other Application Dependencies ---
+ffmpeg-python>=0.2.0
+markdown
+msal>=1.26.0
+mutagen>=1.46.0
+numpy>=1.21.0
+python-dotenv>=0.19.0
+PyJWT>=2.0.0
+requests>=2.25.0
+lightrag-hku
+openscenesense-ollama
