@@ -1,7 +1,9 @@
 # --- Primary PyTorch Index ---
---index-url https://download.pytorch.org/whl/cu124
+# We use --extra-index-url so pip can still find tiktoken/numpy/etc on PyPI
+--extra-index-url https://download.pytorch.org/whl/cu124
 
 # --- Core AI and ML Dependencies ---
+# The +cu124 suffix forces pip to get these from the PyTorch repo
 torch==2.6.0+cu124
 torchvision==0.21.0+cu124
 torchaudio==2.6.0+cu124
