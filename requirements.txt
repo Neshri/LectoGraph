@@ -1,12 +1,10 @@
 # --- Primary PyTorch Index ---
-# Using --index-url ensures pip looks here FIRST to avoid experimental PyPI builds
 --index-url https://download.pytorch.org/whl/cu124
 
 # --- Core AI and ML Dependencies ---
-# Pinning these ensures compatibility with Python 3.13 and your 12.4 driver
-torch==2.5.1+cu124
-torchvision==0.20.1+cu124
-torchaudio==2.5.1+cu124
+torch==2.6.0+cu124
+torchvision==0.21.0+cu124
+torchaudio==2.6.0+cu124
 tiktoken
 ctranslate2>=4.0.0
 faster-whisper>=1.0.0
@@ -14,7 +12,6 @@ openai-whisper>=20240930
 transformers>=4.35.0
 
 # --- Other Application Dependencies ---
-# The rest can remain as they were
 ffmpeg-python>=0.2.0
 markdown
 msal>=1.26.0
