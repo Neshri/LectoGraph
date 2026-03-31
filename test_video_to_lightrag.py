@@ -81,6 +81,8 @@ async def run_pipeline():
         model_name=WHISPER_MODEL,
         device="cuda"
     )
+    #Force the underlying PyTorch model to use 32-bit floats
+    transcriber.model.float() 
 
     analyzer = OllamaVideoAnalyzer(
         frame_analysis_model=FRAME_ANALYSIS_MODEL,
