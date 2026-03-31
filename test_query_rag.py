@@ -21,8 +21,8 @@ except ImportError as e:
 
 OLLAMA_URL = "http://127.0.0.1:11434"
 RAG_LLM_MODEL = "qwen3:32b"
-RAG_EMBEDDING_MODEL = "nomic-embed-text"
-RAG_EMBEDDING_DIM = 768
+RAG_EMBEDDING_MODEL = "qwen3-embedding:8b"
+RAG_EMBEDDING_DIM = 4096
 RAG_WORKING_DIR = "./test_course_knowledge_db"
 
 logging.basicConfig(
