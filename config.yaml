@@ -1,0 +1,55 @@
+# ─── LectoGraph Ingestion Config ────────────────────────────────────────────
+# Edit this file to change models, paths, or processing settings.
+# All paths are relative to the directory you run ingest.py from.
+
+# ─── Paths ───────────────────────────────────────────────────────────────────
+input_folder: ./input          # Folder containing video files to process
+working_dir: ./knowledge_db    # LightRAG graph database storage
+docs_dir: ./docs               # Where formatted knowledge .txt docs are saved
+logs_dir: ./logs               # One log file per run, named by timestamp
+
+# ─── OpenSceneSense (video analysis) ─────────────────────────────────────────
+whisper_model: KBLab/kb-whisper-large
+whisper_device: cuda           # "cuda" or "cpu"
+frame_analysis_model: glm-ocr
+summary_model: qwen3:32b
+
+min_frames: 5
+max_frames: 45
+frames_per_minute: 3.0
+frame_threshold: 70.0          # DynamicFrameSelector scene-change sensitivity
+request_timeout: 600.0         # Seconds before Ollama request times out
+request_retries: 1
+
+# ─── LightRAG / Ollama ───────────────────────────────────────────────────────
+ollama_url: http://127.0.0.1:11434
+rag_llm_model: qwen3:32b
+# WARNING: Do NOT change rag_embedding_model or rag_embedding_dim after the
+# knowledge_db has been created. The stored vectors will be incompatible with
+# the new model and queries will silently return garbage. If you need to switch
+# models, delete knowledge_db/ and re-run ingest.py from scratch.
+rag_embedding_model: qwen3-embedding:8b
+rag_embedding_dim: 4096
+rag_llm_num_ctx: 8192
+rag_llm_temperature: 0.1
+rag_llm_think: false
+
+# ─── Processing ──────────────────────────────────────────────────────────────
+# File extensions to scan in input_folder (case-insensitive)
+video_extensions:
+  - .mp4
+  - .mkv
+  - .avi
+  - .mov
+  - .webm
+
+# ─── Prompts ─────────────────────────────────────────────────────────────────
+# Prompt sent to the frame analysis model for each extracted video frame.
+# Tune this to match the content type of your videos — e.g. for non-IT courses
+# you'd change "IT-lektion" and the list of things to look for.
+frame_analysis_prompt: >
+  Du analyserar en skärmbild från en IT-lektion.
+  Beskriv endast vad som är direkt synligt: öppna fönster, programnamn,
+  terminalutskrifter, fil- och mappstrukturer, dialogrutor och text på skärmen.
+  Dra inga slutsatser eller antaganden om sådant som inte syns direkt.
+

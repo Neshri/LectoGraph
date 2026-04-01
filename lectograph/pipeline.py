@@ -1,0 +1,244 @@
+"""
+Core ingestion pipeline.
+
+Responsibilities:
+  - Build the OpenSceneSense analyzer (once, shared across all videos)
+  - Build the LightRAG instance (once, shared across all videos)
+  - Loop over pending videos, analyze → format → save doc → ingest
+  - Honour a threading.Event stop signal between videos for clean shutdown
+  - Report per-video success/failure back to the caller via StateDB
+"""
+
+from __future__ import annotations
+
+import logging
+import threading
+from pathlib import Path
+from typing import Optional
+
+import numpy as np
+
+from .config import Config
+from .state import StateDB
+
+
+# ─── Knowledge document formatter ────────────────────────────────────────────
+
+def _readable_title(video_path: Path) -> str:
+    """Turn a filename like 'windows7_kontrollpanel.mp4' into 'Windows7 Kontrollpanel'."""
+    return video_path.stem.replace("_", " ").replace("-", " ").title()
+
+
+def format_knowledge_doc(video_path: Path, results) -> str:
+    """
+    Convert OpenSceneSense results into a knowledge document optimised for
+    LightRAG's entity/relationship extraction pipeline.
+
+    Design rationale:
+    - No operational metadata (duration, frame counts) — these become junk
+      graph triples and dilute extraction quality.
+    - Brief summary opens the document as a factual context paragraph. This
+      seeds LightRAG's global-mode community summaries without duplicating
+      the detailed content.
+    - Detailed walkthrough is the primary extraction surface — dense,
+      structured, factual prose yields the best entity/relationship recall.
+    - Transcript is appended last as a supplementary signal. Raw speech is
+      noisy, but qwen3:32b can still mine real entities from it and it
+      preserves the instructor's exact instructions.
+    - Brief summary is NOT repeated as its own section to avoid duplicate
+      graph edges from redundant extraction.
+    """
+    title = _readable_title(video_path)
+
+    return (
+        f"# {title}\n"
+        f"\n"
+        f"{results.summary.brief}\n"
+        f"\n"
+        f"## Detaljerad genomgång\n"
+        f"\n"
+        f"{results.summary.detailed}\n"
+        f"\n"
+        f"## Transkription (vad som sades)\n"
+        f"\n"
+        f"{results.summary.transcript}\n"
+    )
+
+
+# ─── Analyzer factory ─────────────────────────────────────────────────────────
+
+def build_analyzer(cfg: Config, logger: logging.Logger):
+    """
+    Construct and return a fully-initialised OllamaVideoAnalyzer.
+    Loading Whisper is the expensive part — do this once before the loop.
+    """
+    from openscenesense_ollama.models import AnalysisPrompts
+    from openscenesense_ollama.transcriber import WhisperTranscriber
+    from openscenesense_ollama.analyzer import OllamaVideoAnalyzer
+    from openscenesense_ollama.frame_selectors import DynamicFrameSelector
+
+    logger.info(f"Loading Whisper model: {cfg.whisper_model} (device={cfg.whisper_device})")
+
+    custom_prompts = AnalysisPrompts(
+        frame_analysis=cfg.frame_analysis_prompt,
+    )
+
+    transcriber = WhisperTranscriber(
+        model_name=cfg.whisper_model,
+        device=cfg.whisper_device,
+    )
+    # Force 32-bit floats to avoid precision issues on some CUDA setups
+    transcriber.model.float()
+
+    analyzer = OllamaVideoAnalyzer(
+        frame_analysis_model=cfg.frame_analysis_model,
+        summary_model=cfg.summary_model,
+        min_frames=cfg.min_frames,
+        max_frames=cfg.max_frames,
+        frames_per_minute=cfg.frames_per_minute,
+        frame_selector=DynamicFrameSelector(threshold=cfg.frame_threshold),
+        audio_transcriber=transcriber,
+        prompts=custom_prompts,
+        request_timeout=cfg.request_timeout,
+        request_retries=cfg.request_retries,
+        log_level=logging.INFO,
+    )
+
+    logger.info("Analyzer ready.")
+    return analyzer
+
+
+# ─── LightRAG factory ─────────────────────────────────────────────────────────
+
+async def build_rag(cfg: Config, logger: logging.Logger):
+    """Construct and initialise a LightRAG instance."""
+    from lightrag import LightRAG
+    from lightrag.llm.ollama import ollama_model_complete, ollama_embed
+    from lightrag.utils import wrap_embedding_func_with_attrs
+
+    logger.info(
+        f"Initialising LightRAG at {cfg.working_dir}  "
+        f"(llm={cfg.rag_llm_model}, embed={cfg.rag_embedding_model})"
+    )
+
+    @wrap_embedding_func_with_attrs(
+        embedding_dim=cfg.rag_embedding_dim,
+        max_token_size=8192,
+        model_name=cfg.rag_embedding_model,
+    )
+    async def embedding_func(texts: list[str]) -> np.ndarray:
+        return await ollama_embed.func(
+            texts,
+            embed_model=cfg.rag_embedding_model,
+            host=cfg.ollama_url,
+        )
+
+    rag = LightRAG(
+        working_dir=str(cfg.working_dir),
+        llm_model_func=ollama_model_complete,
+        llm_model_name=cfg.rag_llm_model,
+        llm_model_max_async=1,
+        embedding_func=embedding_func,
+        enable_llm_cache=False,
+        llm_model_kwargs={
+            "host": cfg.ollama_url,
+            "options": {
+                "num_ctx": cfg.rag_llm_num_ctx,
+                "temperature": cfg.rag_llm_temperature,
+            },
+            "think": cfg.rag_llm_think,
+        },
+    )
+
+    await rag.initialize_storages()
+    logger.info("LightRAG initialised.")
+    return rag
+
+
+# ─── Main ingestion loop ──────────────────────────────────────────────────────
+
+async def run_ingestion(
+    cfg: Config,
+    rag,
+    analyzer,
+    state: StateDB,
+    logger: logging.Logger,
+    stop_event: threading.Event,
+    limit: Optional[int] = None,
+) -> tuple[list[str], list[str]]:
+    """
+    Process all pending videos.
+
+    Returns (ingested_list, failed_list).
+
+    Checks *stop_event* between videos — if set, exits cleanly after the
+    current video finishes so the DB is never left in a dirty state.
+    """
+    pending = state.get_pending()
+    if limit is not None:
+        pending = pending[:limit]
+
+    total = len(pending)
+    ingested: list[str] = []
+    failed:   list[str] = []
+
+    if total == 0:
+        logger.info("No pending videos — nothing to do.")
+        return ingested, failed
+
+    logger.info(f"Starting ingestion of {total} video(s).")
+
+    cfg.docs_dir.mkdir(parents=True, exist_ok=True)
+
+    for idx, filename in enumerate(pending, start=1):
+        # ── Check for stop signal before starting a new video ──────────────
+        if stop_event.is_set():
+            logger.info("Stop signal received. Halting before next video.")
+            break
+
+        video_path = cfg.input_folder / filename
+        logger.info(f"[{idx}/{total}] ── {filename}")
+
+        if not video_path.exists():
+            msg = f"File not found on disk: {video_path}"
+            logger.warning(msg)
+            state.mark_failed(filename, msg)
+            failed.append(filename)
+            continue
+
+        # ── Step 1: Analyze ────────────────────────────────────────────────
+        state.mark_analyzing(filename)
+        logger.info(f"  Analyzing video...")
+        try:
+            results = analyzer.analyze_video_structured(str(video_path))
+        except Exception as exc:
+            msg = f"Analysis error: {exc}"
+            logger.error(f"  {msg}", exc_info=True)
+            state.mark_failed(filename, msg)
+            failed.append(filename)
+            continue
+
+        # ── Step 2: Format + save knowledge document ───────────────────────
+        doc = format_knowledge_doc(video_path, results)
+        doc_path = cfg.docs_dir / (video_path.stem + "_ingested.txt")
+        with open(doc_path, "w", encoding="utf-8") as f:
+            f.write(doc)
+        logger.info(f"  Document saved → {doc_path}  ({len(doc):,} chars)")
+
+        # ── Step 3: Ingest into LightRAG ───────────────────────────────────
+        logger.info(f"  Inserting into LightRAG knowledge graph...")
+        try:
+            await rag.ainsert(doc)
+        except Exception as exc:
+            msg = f"Ingestion error: {exc}"
+            logger.error(f"  {msg}", exc_info=True)
+            state.mark_failed(filename, msg)
+            failed.append(filename)
+            continue
+
+        # ── Commit success ─────────────────────────────────────────────────
+        state.mark_ingested(filename, len(doc))
+        ingested.append(filename)
+        logger.info(f"  ✓ Ingested successfully.")
+
+    return ingested, failed
