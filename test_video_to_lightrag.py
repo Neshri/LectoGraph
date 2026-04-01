@@ -28,7 +28,8 @@ except ImportError as e:
 
 # ─── Configuration ───────────────────────────────────────────────────────────
 
-VIDEO_PATH = "windows7kontrollpanel.mp4"
+INPUT_FOLDER = "./input"
+VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".webm"}
 
 # OpenSceneSense Models
 WHISPER_MODEL = "KBLab/kb-whisper-large"
@@ -66,7 +67,28 @@ def print_section(title: str):
 # ─── Main Async Pipeline  ────────────────────────────────────────────────────
 
 async def run_pipeline():
-    print_section("Step 1: Analyzing Video")
+    # ── Discover videos ───────────────────────────────────────────────────────
+    input_folder = Path(INPUT_FOLDER)
+    if not input_folder.exists():
+        logger.error(f"Input folder not found: {input_folder.resolve()}")
+        return
+
+    video_files = sorted(
+        p for p in input_folder.iterdir()
+        if p.is_file() and p.suffix.lower() in VIDEO_EXTENSIONS
+    )
+
+    if not video_files:
+        logger.error(f"No video files found in {input_folder.resolve()}")
+        return
+
+    logger.info(f"Found {len(video_files)} video(s) to process:")
+    for vf in video_files:
+        logger.info(f"  • {vf.name}")
+
+
+    # ── Build shared analyzer (transcriber is expensive to load) ──────────────
+    print_section("Setting Up Analyzer")
 
     custom_prompts = AnalysisPrompts(
         frame_analysis=(
@@ -81,8 +103,8 @@ async def run_pipeline():
         model_name=WHISPER_MODEL,
         device="cuda"
     )
-    #Force the underlying PyTorch model to use 32-bit floats
-    transcriber.model.float() 
+    # Force the underlying PyTorch model to use 32-bit floats
+    transcriber.model.float()
 
     analyzer = OllamaVideoAnalyzer(
         frame_analysis_model=FRAME_ANALYSIS_MODEL,
@@ -98,45 +120,9 @@ async def run_pipeline():
         log_level=logging.INFO
     )
 
-    logger.info(f"Extracting data from {VIDEO_PATH}...")
 
-    try:
-        results = analyzer.analyze_video_structured(VIDEO_PATH)
-    except Exception as e:
-        logger.error(f"Video analysis failed: {e}", exc_info=True)
-        return
-
-
-    print_section("Step 2: Formatting Knowledge Document")
-
-    filename = Path(VIDEO_PATH).name
-    knowledge_doc = f"""# Lektion: {filename}
-Längd: {results.metadata.video_duration:.1f} sekunder
-Antal skärmutdrag: {results.metadata.num_frames_analyzed}
-Antal ljudsegment: {results.metadata.num_audio_segments}
-
-## Vad som sades (Transkription)
-{results.summary.transcript}
-
-## Detaljerad genomgång
-{results.summary.detailed}
-
-## Kort sammanfattning
-{results.summary.brief}
-"""
-
-    logger.info("Generated Document Preview:")
-    print("-" * 40)
-    print(knowledge_doc[:1000] + "\n\n...[dokument trunkerat för översikt]...")
-    print("-" * 40)
-
-    doc_path = "latest_ingested_doc.txt"
-    with open(doc_path, "w", encoding="utf-8") as f:
-        f.write(knowledge_doc)
-    logger.info(f"Full document saved to {doc_path}")
-
-
-    print_section("Step 3: Initializing LightRAG Database")
+    # ── Initialize LightRAG once for all videos ───────────────────────────────
+    print_section("Initializing LightRAG Database")
 
     if Path(RAG_WORKING_DIR).exists():
         logger.info(f"Clearing old LightRAG storage at {RAG_WORKING_DIR}")
@@ -176,15 +162,76 @@ Antal ljudsegment: {results.metadata.num_audio_segments}
     logger.info("LightRAG graph database initialized.")
 
 
-    print_section("Step 4: Ingesting into LightRAG")
-    logger.info(f"Inserting document ({len(knowledge_doc)} chars) into knowledge graph...")
+    # ── Process each video ────────────────────────────────────────────────────
+    ingested = []
+    failed = []
 
-    await rag.ainsert(knowledge_doc)
+    for idx, video_path in enumerate(video_files, start=1):
+        print_section(f"Video {idx}/{len(video_files)}: {video_path.name}")
 
-    logger.info("Ingestion complete!")
+        # Step A: Analyze
+        logger.info(f"Extracting data from {video_path}...")
+        try:
+            results = analyzer.analyze_video_structured(str(video_path))
+        except Exception as e:
+            logger.error(f"Video analysis failed for {video_path.name}: {e}", exc_info=True)
+            failed.append(video_path.name)
+            continue
+
+        # Step B: Format knowledge document
+        knowledge_doc = f"""# Lektion: {video_path.name}
+Längd: {results.metadata.video_duration:.1f} sekunder
+Antal skärmutdrag: {results.metadata.num_frames_analyzed}
+Antal ljudsegment: {results.metadata.num_audio_segments}
+
+## Vad som sades (Transkription)
+{results.summary.transcript}
+
+## Detaljerad genomgång
+{results.summary.detailed}
+
+## Kort sammanfattning
+{results.summary.brief}
+"""
+
+        logger.info("Generated Document Preview:")
+        print("-" * 40)
+        print(knowledge_doc[:1000] + "\n\n...[dokument trunkerat för översikt]...")
+        print("-" * 40)
+
+        doc_path = input_folder / (video_path.stem + "_ingested.txt")
+        with open(doc_path, "w", encoding="utf-8") as f:
+            f.write(knowledge_doc)
+        logger.info(f"Full document saved to {doc_path}")
+
+        # Step C: Ingest into LightRAG
+        logger.info(f"Inserting document ({len(knowledge_doc)} chars) into knowledge graph...")
+        try:
+            await rag.ainsert(knowledge_doc)
+            logger.info(f"Ingestion complete for {video_path.name}!")
+            ingested.append(video_path.name)
+        except Exception as e:
+            logger.error(f"Ingestion failed for {video_path.name}: {e}", exc_info=True)
+            failed.append(video_path.name)
 
 
-    print_section("Step 5: Querying Knowledge Base")
+    # ── Summary ───────────────────────────────────────────────────────────────
+    print_section("Ingestion Summary")
+    logger.info(f"Successfully ingested: {len(ingested)} video(s)")
+    for name in ingested:
+        logger.info(f"  ✓ {name}")
+    if failed:
+        logger.warning(f"Failed: {len(failed)} video(s)")
+        for name in failed:
+            logger.warning(f"  ✗ {name}")
+
+    if not ingested:
+        logger.error("No videos were successfully ingested. Skipping query.")
+        return
+
+
+    # ── Test Query ────────────────────────────────────────────────────────────
+    print_section("Querying Knowledge Base")
     logger.info(f"Test Query: '{TEST_QUERY}' (Mode: hybrid)")
 
     try:
