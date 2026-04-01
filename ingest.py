@@ -211,11 +211,14 @@ async def main_async(args: argparse.Namespace) -> int:
     def _request_stop(signum, frame):  # called from the OS signal thread
         if not stop_event.is_set():
             print(
-                "\n[!] Stop requested (signal received). "
-                "Finishing the current video, then exiting cleanly...",
+                "\n[!] Stop requested. Finishing the current video, then exiting...\n"
+                "    Press Ctrl+C again to force quit immediately.\n",
                 flush=True,
             )
             stop_event.set()
+            # Restore the default SIGINT handler so a second Ctrl+C actually
+            # kills the process instead of being swallowed.
+            signal.signal(signal.SIGINT, signal.SIG_DFL)
 
     signal.signal(signal.SIGINT, _request_stop)
     # SIGTERM is not reliably available on Windows; ignore if unsupported.
