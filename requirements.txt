@@ -25,3 +25,4 @@ requests>=2.25.0
 lightrag-hku
 openscenesense-ollama
 pyyaml>=6.0
+beautifulsoup4
