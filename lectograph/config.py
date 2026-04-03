@@ -47,14 +47,10 @@ class Config:
     )
 
     # ── Prompts ───────────────────────────────────────────────────────────────
-    # Prompt sent to the frame analysis model for each extracted frame.
-    # Tune this to match the content type of your videos.
-    frame_analysis_prompt: str = (
-        "Du analyserar en skärmbild från en IT-lektion. "
-        "Beskriv endast vad som är direkt synligt: öppna fönster, programnamn, "
-        "terminalutskrifter, fil- och mappstrukturer, dialogrutor och text på skärmen. "
-        "Dra inga slutsatser eller antaganden om sådant som inte syns direkt."
-    )
+    # Prompts are defined in config.yaml to avoid duplicating them in code.
+    frame_analysis_prompt: str = ""
+    detailed_summary_prompt: str = ""
+    brief_summary_prompt: str = ""
 
     # ── Derived helpers ───────────────────────────────────────────────────────
     @property

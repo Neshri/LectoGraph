@@ -47,9 +47,42 @@ video_extensions:
 # Prompt sent to the frame analysis model for each extracted video frame.
 # Tune this to match the content type of your videos — e.g. for non-IT courses
 # you'd change "IT-lektion" and the list of things to look for.
-frame_analysis_prompt: >
+frame_analysis_prompt: |
   Du analyserar en skärmbild från en IT-lektion.
   Beskriv endast vad som är direkt synligt: öppna fönster, programnamn,
   terminalutskrifter, fil- och mappstrukturer, dialogrutor och text på skärmen.
   Dra inga slutsatser eller antaganden om sådant som inte syns direkt.
+
+detailed_summary_prompt: |
+  Du sammanfattar en IT-lektion från en skärminspelning.
+  Baserat strikt på skärmtidslinjen och ljudtranskriptionen nedan,
+  skriv en trovärdig sammanfattning på svenska av vad som undervisades.
+  Lägg inte till information som inte finns i källmaterialet.
+  Om ett specifikt värde såsom en kod, ett kommando eller en identifierare
+  inte finns explicit i tidslinjen eller transkriptionen, utelämna det helt.
+
+  Videolängd: {duration:.1f} sekunder
+
+  Skärmtidslinje:
+
+  {timeline}
+
+  Ljudtranskription:
+
+  {transcript}
+
+brief_summary_prompt: |
+  Baserat strikt på denna {duration:.1f} sekunder långa IT-lektion,
+  skriv en kortfattad sammanfattning på svenska av vad som demonstrerades och förklarades.
+  Ta endast med det som finns explicit i tidslinjen och transkriptionen.
+  Om ett specifikt värde såsom en kod, ett kommando eller en identifierare
+  inte finns explicit i tidslinjen eller transkriptionen, utelämna det helt.
+
+  Skärmtidslinje:
+
+  {timeline}
+
+  Transkription:
+
+  {transcript}
 

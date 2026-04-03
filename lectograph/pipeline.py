@@ -81,6 +81,8 @@ def build_analyzer(cfg: Config, logger: logging.Logger):
 
     custom_prompts = AnalysisPrompts(
         frame_analysis=cfg.frame_analysis_prompt,
+        detailed_summary=cfg.detailed_summary_prompt,
+        brief_summary=cfg.brief_summary_prompt,
     )
 
     transcriber = WhisperTranscriber(
