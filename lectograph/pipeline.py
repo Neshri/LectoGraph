@@ -73,7 +73,7 @@ def build_analyzer(cfg: Config, logger: logging.Logger):
     Loading Whisper is the expensive part — do this once before the loop.
     """
     from openscenesense_ollama.models import AnalysisPrompts
-    from openscenesense_ollama.transcriber import WhisperTranscriber
+    from lectograph.transcriber import FasterWhisperAdapter
     from openscenesense_ollama.analyzer import OllamaVideoAnalyzer
     from openscenesense_ollama.frame_selectors import DynamicFrameSelector
 
@@ -85,12 +85,10 @@ def build_analyzer(cfg: Config, logger: logging.Logger):
         brief_summary=cfg.brief_summary_prompt,
     )
 
-    transcriber = WhisperTranscriber(
+    transcriber = FasterWhisperAdapter(
         model_name=cfg.whisper_model,
         device=cfg.whisper_device,
     )
-    # Force 32-bit floats to avoid precision issues on some CUDA setups
-    transcriber.model.float()
 
     analyzer = OllamaVideoAnalyzer(
         frame_analysis_model=cfg.frame_analysis_model,
