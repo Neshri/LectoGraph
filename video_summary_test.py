@@ -46,7 +46,7 @@ custom_prompts = AnalysisPrompts(
 
 analyzer = OllamaVideoAnalyzer(
     frame_analysis_model="glm-ocr",
-    summary_model="qwen3:32b",
+    summary_model="gemma4:31b",
     min_frames=5,
     max_frames=45,
     frames_per_minute=3.0,
@@ -58,7 +58,7 @@ analyzer = OllamaVideoAnalyzer(
     log_level=logging.INFO
 )
 
-video_path = "windows7kontrollpanel.mp4"
+video_path = "input/cisco23.mp4"
 try:
     results = analyzer.analyze_video(video_path)
 except Exception as exc:
