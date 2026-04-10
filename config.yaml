@@ -12,7 +12,7 @@ logs_dir: ./logs               # One log file per run, named by timestamp
 whisper_model: KBLab/kb-whisper-large
 whisper_device: cuda           # "cuda" or "cpu"
 frame_analysis_model: glm-ocr
-summary_model: qwen3:32b
+summary_model: gemma4:31b
 
 min_frames: 5
 max_frames: 45
@@ -23,7 +23,7 @@ request_retries: 1
 
 # ─── LightRAG / Ollama ───────────────────────────────────────────────────────
 ollama_url: http://127.0.0.1:11434
-rag_llm_model: qwen3:32b
+rag_llm_model: gemma4:31b
 # WARNING: Do NOT change rag_embedding_model or rag_embedding_dim after the
 # knowledge_db has been created. The stored vectors will be incompatible with
 # the new model and queries will silently return garbage. If you need to switch

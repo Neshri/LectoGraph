@@ -62,6 +62,28 @@ def parse_args() -> argparse.Namespace:
             "to re-ingest everything into an existing or new graph."
         ),
     )
+    # ── Re-ingest faulty docs ──────────────────────────────────────────────────
+    p.add_argument(
+        "--detect-faulty", action="store_true",
+        help=(
+            "Scan docs/ for saved documents containing Chinese characters and print "
+            "the list of affected video files. Fast — does not start LightRAG."
+        ),
+    )
+    p.add_argument(
+        "--reingest", nargs="+", metavar="FILE",
+        help=(
+            "Delete the named video(s) from LightRAG and re-ingest them. "
+            "Example: --reingest cisco23.mp4 cisco24.mp4"
+        ),
+    )
+    p.add_argument(
+        "--reingest-faulty", action="store_true",
+        help=(
+            "Automatically detect documents with Chinese characters, remove them "
+            "from LightRAG, and re-ingest them."
+        ),
+    )
     return p.parse_args()
 
 
@@ -174,6 +196,38 @@ async def main_async(args: argparse.Namespace) -> int:
         requeued = state.reset_failed()
         logger.info(f"Re-queued {requeued} previously failed video(s).")
 
+    # ── --detect-faulty ───────────────────────────────────────────────────────
+    if args.detect_faulty:
+        from lectograph.pipeline import detect_faulty_docs
+        faulty = detect_faulty_docs(cfg.docs_dir, state)
+        if faulty:
+            print(f"\nFound {len(faulty)} document(s) with Chinese characters:")
+            for name in faulty:
+                print(f"  • {name}")
+            print("\nRun with --reingest-faulty to delete and re-ingest them.\n")
+        else:
+            print("\nNo faulty documents detected (no Chinese characters found).\n")
+        state.close()
+        return 0
+
+    # ── --reingest / --reingest-faulty ────────────────────────────────────────
+    reingest_targets: list[str] | None = None
+
+    if args.reingest_faulty:
+        from lectograph.pipeline import detect_faulty_docs
+        reingest_targets = detect_faulty_docs(cfg.docs_dir, state)
+        if not reingest_targets:
+            logger.info("No faulty documents detected — nothing to re-ingest.")
+            state.close()
+            return 0
+        logger.info(
+            f"Detected {len(reingest_targets)} faulty document(s): "
+            + ", ".join(reingest_targets)
+        )
+    elif args.reingest:
+        reingest_targets = args.reingest
+        logger.info(f"Re-ingest requested for: {', '.join(reingest_targets)}")
+
 
     # ── --status ──────────────────────────────────────────────────────────────
     if args.status:
@@ -196,14 +250,18 @@ async def main_async(args: argparse.Namespace) -> int:
         return 0
 
     # ── Bail early if nothing to do ───────────────────────────────────────────
+    # Skip this check when reingest_targets is set: the videos will be reset to
+    # 'pending' by run_reingest (inside the deletion phase), which hasn't run yet.
     pending = state.get_pending()
-    if not pending:
+    if not pending and not reingest_targets:
         logger.info("No pending videos. Run with --retry-failed to requeue failures.")
         print_status(state)
         state.close()
         return 0
 
-    logger.info(f"{len(pending)} video(s) pending.")
+    if pending:
+        logger.info(f"{len(pending)} video(s) pending.")
+
 
     # ── Set up Ctrl+C / SIGTERM handler ───────────────────────────────────────
     stop_event = threading.Event()
@@ -228,7 +286,7 @@ async def main_async(args: argparse.Namespace) -> int:
         pass
 
     # ── Build analyzer (loads Whisper — takes a moment) ───────────────────────
-    from lectograph.pipeline import build_analyzer, build_rag, run_ingestion
+    from lectograph.pipeline import build_analyzer, build_rag, run_ingestion, run_reingest
     try:
         analyzer = build_analyzer(cfg, logger)
     except Exception as e:
@@ -243,6 +301,27 @@ async def main_async(args: argparse.Namespace) -> int:
         logger.error(f"Failed to initialise LightRAG: {e}", exc_info=True)
         state.close()
         return 1
+
+    # ── Run deletion phase (reingest only) ────────────────────────────────────
+    if reingest_targets:
+        logger.info("=" * 70)
+        logger.info(f"Phase 1/2 — Deleting {len(reingest_targets)} document(s) from LightRAG…")
+        deleted, skipped = await run_reingest(
+            cfg=cfg,
+            rag=rag,
+            analyzer=analyzer,
+            state=state,
+            logger=logger,
+            filenames=reingest_targets,
+            stop_event=stop_event,
+        )
+        logger.info(
+            f"Deletion phase complete.  Deleted: {len(deleted)}  Skipped: {len(skipped)}"
+        )
+        if skipped:
+            logger.warning("Skipped (delete failed): " + ", ".join(skipped))
+        logger.info("=" * 70)
+        logger.info("Phase 2/2 — Re-ingesting newly queued video(s)…")
 
     # ── Run the ingestion loop ─────────────────────────────────────────────────
     logger.info("=" * 70)

@@ -100,6 +100,22 @@ class StateDB:
         self._conn.commit()
         return cur.rowcount
 
+    def reset_to_pending(self, filename: str) -> bool:
+        """
+        Reset a single video back to 'pending', clearing timestamps and error.
+        Used by the re-ingest flow after the old LightRAG document has been deleted.
+        Returns True if the row was found and updated.
+        """
+        cur = self._conn.execute(
+            """UPDATE videos
+               SET status=?, error_message=NULL,
+                   analyzed_at=NULL, ingested_at=NULL, doc_char_count=NULL
+               WHERE filename=?""",
+            (STATUS_PENDING, filename),
+        )
+        self._conn.commit()
+        return cur.rowcount > 0
+
     # ── Queries ───────────────────────────────────────────────────────────────
 
     def get_pending(self) -> List[str]:

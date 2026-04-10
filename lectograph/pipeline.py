@@ -242,3 +242,117 @@ async def run_ingestion(
         logger.info(f"  ✓ Ingested successfully.")
 
     return ingested, failed
+
+
+# ─── Faulty document detection ────────────────────────────────────────────────
+
+# CJK Unified Ideographs (basic block, covers virtually all common Chinese chars)
+_CJK_RANGE = range(0x4E00, 0xA000)
+
+def _contains_cjk(text: str) -> bool:
+    return any(ord(ch) in _CJK_RANGE for ch in text)
+
+
+def detect_faulty_docs(docs_dir: Path, state: StateDB) -> list[str]:
+    """
+    Scan every saved knowledge-document in *docs_dir* for CJK characters.
+
+    Returns a list of video *filenames* (e.g. 'cisco23.mp4') whose saved
+    ``_ingested.txt`` contains Chinese characters.  Only files that are also
+    tracked in the state DB (as 'ingested') are considered.
+    """
+    faulty: list[str] = []
+
+    if not docs_dir.exists():
+        return faulty
+
+    # Build a quick lookup: stem → filename for all ingested rows.
+    all_rows = state.get_all()
+    stem_to_filename = {
+        Path(r["filename"]).stem: r["filename"]
+        for r in all_rows
+        if r["status"] == "ingested"
+    }
+
+    for doc_path in sorted(docs_dir.glob("*_ingested.txt")):
+        # Strip the "_ingested" suffix to recover the video stem.
+        stem = doc_path.stem[: -len("_ingested")]
+        if stem not in stem_to_filename:
+            continue  # not in DB (orphan file), skip
+
+        try:
+            content = doc_path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+
+        if _contains_cjk(content):
+            faulty.append(stem_to_filename[stem])
+
+    return faulty
+
+
+# ─── Re-ingest pipeline ───────────────────────────────────────────────────────
+
+async def run_reingest(
+    cfg: Config,
+    rag,
+    analyzer,
+    state: StateDB,
+    logger: logging.Logger,
+    filenames: list[str],
+    stop_event: threading.Event,
+) -> tuple[list[str], list[str]]:
+    """
+    Delete *filenames* from the LightRAG knowledge graph and re-queue them.
+
+    For each video:
+      1. Read the saved ``docs/<stem>_ingested.txt`` file.
+      2. Derive the LightRAG doc ID via the same MD5 hash LightRAG uses.
+      3. Call ``rag.adelete_by_doc_id()`` — LightRAG rebuilds the KG automatically.
+      4. Remove the stale txt file so the next analysis writes a fresh one.
+      5. Call ``state.reset_to_pending()`` to re-queue the video.
+
+    Returns (deleted_list, skipped_list) from the deletion phase.
+    After this call, run the normal ``run_ingestion`` loop to process pending videos.
+    """
+    from lightrag.utils import compute_mdhash_id  # type: ignore
+
+    deleted:  list[str] = []
+    skipped:  list[str] = []
+
+    for filename in filenames:
+        if stop_event.is_set():
+            logger.info("Stop signal received during deletion phase. Halting.")
+            break
+
+        stem     = Path(filename).stem
+        doc_path = cfg.docs_dir / f"{stem}_ingested.txt"
+
+        if not doc_path.exists():
+            logger.warning(f"  [reingest] No saved doc found for {filename} — skipping deletion, but resetting to pending.")
+            state.reset_to_pending(filename)
+            skipped.append(filename)
+            continue
+
+        content = doc_path.read_text(encoding="utf-8")
+        doc_id  = compute_mdhash_id(content, prefix="doc-")
+
+        logger.info(f"  [reingest] Deleting doc '{doc_id}' for {filename} from LightRAG…")
+        try:
+            await rag.adelete_by_doc_id(doc_id)
+        except Exception as exc:
+            logger.error(f"  [reingest] Delete failed for {filename}: {exc}", exc_info=True)
+            skipped.append(filename)
+            continue
+
+        # Remove stale saved document so pipeline writes a fresh one.
+        doc_path.unlink(missing_ok=True)
+        logger.info(f"  [reingest] Removed stale doc file: {doc_path.name}")
+
+        # Reset DB entry so the normal ingestion loop picks it up.
+        state.reset_to_pending(filename)
+        logger.info(f"  [reingest] Reset '{filename}' → pending.")
+        deleted.append(filename)
+
+    return deleted, skipped
+
