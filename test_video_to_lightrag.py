@@ -34,11 +34,11 @@ VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".webm"}
 # OpenSceneSense Models
 WHISPER_MODEL = "KBLab/kb-whisper-large"
 FRAME_ANALYSIS_MODEL = "glm-ocr"
-SUMMARY_MODEL = "qwen3:32b"
+SUMMARY_MODEL = "gemma4:31b"
 
 # LightRAG Models & Storage
 OLLAMA_URL = "http://127.0.0.1:11434"
-RAG_LLM_MODEL = "qwen3:32b"
+RAG_LLM_MODEL = "gemma4:31b"
 RAG_EMBEDDING_MODEL = "qwen3-embedding:8b"
 RAG_EMBEDDING_DIM = 4096
 RAG_WORKING_DIR = "./test_course_knowledge_db"
