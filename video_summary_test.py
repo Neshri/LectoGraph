@@ -1,6 +1,6 @@
 import logging
 from openscenesense_ollama.models import AnalysisPrompts
-from openscenesense_ollama.transcriber import WhisperTranscriber
+from lectograph.transcriber import FasterWhisperAdapter
 from openscenesense_ollama.analyzer import OllamaVideoAnalyzer
 from openscenesense_ollama.frame_selectors import DynamicFrameSelector
 
@@ -10,7 +10,7 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-transcriber = WhisperTranscriber(
+transcriber = FasterWhisperAdapter(
     model_name="KBLab/kb-whisper-large",
     device="cuda"
 )
