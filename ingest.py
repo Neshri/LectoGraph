@@ -260,7 +260,10 @@ async def main_async(args: argparse.Namespace) -> int:
         return 0
 
     if pending:
-        logger.info(f"{len(pending)} video(s) pending.")
+        if reingest_targets:
+            logger.info(f"{len(pending)} other video(s) already pending (will not be touched by reingest).")
+        else:
+            logger.info(f"{len(pending)} video(s) pending.")
 
 
     # ── Set up Ctrl+C / SIGTERM handler ───────────────────────────────────────
@@ -333,6 +336,7 @@ async def main_async(args: argparse.Namespace) -> int:
         logger=logger,
         stop_event=stop_event,
         limit=args.limit,
+        only=set(deleted) if reingest_targets else None,
     )
 
     # ── Final summary ─────────────────────────────────────────────────────────

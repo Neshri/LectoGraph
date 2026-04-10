@@ -165,6 +165,7 @@ async def run_ingestion(
     logger: logging.Logger,
     stop_event: threading.Event,
     limit: Optional[int] = None,
+    only: Optional[set] = None,
 ) -> tuple[list[str], list[str]]:
     """
     Process all pending videos.
@@ -173,8 +174,13 @@ async def run_ingestion(
 
     Checks *stop_event* between videos — if set, exits cleanly after the
     current video finishes so the DB is never left in a dirty state.
+
+    If *only* is provided, restricts processing to that set of filenames,
+    ignoring any other pending videos. Used by the reingest flow.
     """
     pending = state.get_pending()
+    if only is not None:
+        pending = [f for f in pending if f in only]
     if limit is not None:
         pending = pending[:limit]
 
@@ -226,9 +232,12 @@ async def run_ingestion(
         logger.info(f"  Document saved → {doc_path}  ({len(doc):,} chars)")
 
         # ── Step 3: Ingest into LightRAG ───────────────────────────────────
-        logger.info(f"  Inserting into LightRAG knowledge graph...")
+        # Use the video stem as a stable, predictable doc ID so we can
+        # reliably delete/replace this document in the future.
+        doc_id = video_path.stem
+        logger.info(f"  Inserting into LightRAG knowledge graph (id='{doc_id}')...")
         try:
-            await rag.ainsert(doc)
+            await rag.ainsert(doc, ids=[doc_id])
         except Exception as exc:
             msg = f"Ingestion error: {exc}"
             logger.error(f"  {msg}", exc_info=True)
@@ -315,8 +324,6 @@ async def run_reingest(
     Returns (deleted_list, skipped_list) from the deletion phase.
     After this call, run the normal ``run_ingestion`` loop to process pending videos.
     """
-    from lightrag.utils import compute_mdhash_id  # type: ignore
-
     deleted:  list[str] = []
     skipped:  list[str] = []
 
@@ -335,7 +342,8 @@ async def run_reingest(
             continue
 
         content = doc_path.read_text(encoding="utf-8")
-        doc_id  = compute_mdhash_id(content, prefix="doc-")
+        # The doc ID is the video stem — set explicitly at insert time.
+        doc_id  = Path(filename).stem
 
         logger.info(f"  [reingest] Deleting doc '{doc_id}' for {filename} from LightRAG…")
         try:
