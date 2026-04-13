@@ -30,7 +30,7 @@ rag_llm_model: qwen3:32b
 # models, delete knowledge_db/ and re-run ingest.py from scratch.
 rag_embedding_model: qwen3-embedding:8b
 rag_embedding_dim: 4096
-rag_llm_num_ctx: 32768
+rag_llm_num_ctx: 8192
 rag_llm_temperature: 0.1
 rag_llm_think: false
 
