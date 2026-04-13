@@ -117,25 +117,44 @@ def setup_logging(logs_dir: Path) -> logging.Logger:
 
 # ─── Status table printer ─────────────────────────────────────────────────────
 
-def print_status(state) -> None:
+def print_status(state, working_dir: Path | None = None) -> None:
     rows = state.get_all()
     counts = state.get_counts()
 
-    col_w = 55  # filename column width
+    # ── LightRAG cross-reference ──────────────────────────────────────────────
+    rag_doc_ids: set[str] | None = None
+    if working_dir is not None:
+        doc_store = working_dir / "kv_store_full_docs.json"
+        if doc_store.exists():
+            import json
+            rag_doc_ids = set(json.loads(doc_store.read_text(encoding="utf-8")).keys())
+
+    col_w = 55
     print()
-    print(f"{'Filename':<{col_w}}  {'Status':<10}  {'Ingested at':<20}  {'Doc chars':>10}  Error")
-    print("─" * 120)
+    print(f"{'Filename':<{col_w}}  {'Status':<10}  {'Ingested at':<20}  {'Doc chars':>10}  {'In LightRAG':<12}  Error")
+    print("─" * 135)
     for r in rows:
         err = (r["error_message"] or "")[:60]
         ingested_at = r["ingested_at"] or ""
         doc_chars = f"{r['doc_char_count']:,}" if r["doc_char_count"] else ""
-        print(f"{r['filename']:<{col_w}}  {r['status']:<10}  {ingested_at:<20}  {doc_chars:>10}  {err}")
 
-    print("─" * 120)
+        if rag_doc_ids is None:
+            in_rag = "?"
+        elif r["status"] != "ingested":
+            in_rag = "-"
+        else:
+            stem = Path(r["filename"]).stem
+            in_rag = "✓" if stem in rag_doc_ids else "⚠ MISSING"
+
+        print(f"{r['filename']:<{col_w}}  {r['status']:<10}  {ingested_at:<20}  {doc_chars:>10}  {in_rag:<12}  {err}")
+
+    print("─" * 135)
     print(
         f"  Total: {sum(counts.values())}  |  "
         + "  ".join(f"{s}: {n}" for s, n in sorted(counts.items()))
     )
+    if rag_doc_ids is not None:
+        print(f"  LightRAG docs in store: {len(rag_doc_ids)}")
     print()
 
 
@@ -231,7 +250,7 @@ async def main_async(args: argparse.Namespace) -> int:
 
     # ── --status ──────────────────────────────────────────────────────────────
     if args.status:
-        print_status(state)
+        print_status(state, cfg.working_dir)
         state.close()
         return 0
 
@@ -255,7 +274,7 @@ async def main_async(args: argparse.Namespace) -> int:
     pending = state.get_pending()
     if not pending and not reingest_targets:
         logger.info("No pending videos. Run with --retry-failed to requeue failures.")
-        print_status(state)
+        print_status(state, cfg.working_dir)
         state.close()
         return 0
 
@@ -347,7 +366,7 @@ async def main_async(args: argparse.Namespace) -> int:
         for name in failed:
             logger.warning(f"  ✗ {name}")
 
-    print_status(state)
+    print_status(state, cfg.working_dir)
     state.close()
 
     return 0 if not failed else 2  # exit code 2 = partial failure
