@@ -40,6 +40,7 @@ class Config:
     rag_llm_num_ctx: int = 8192
     rag_llm_temperature: float = 0.1
     rag_llm_think: bool = False
+    rag_request_timeout: float = 600.0
 
     # ── Processing ────────────────────────────────────────────────────────────
     video_extensions: List[str] = field(

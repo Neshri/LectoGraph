@@ -140,6 +140,8 @@ async def build_rag(cfg: Config, logger: logging.Logger):
         llm_model_max_async=1,
         embedding_func=embedding_func,
         enable_llm_cache=False,
+        default_embedding_timeout=int(cfg.rag_request_timeout),
+        default_llm_timeout=int(cfg.rag_request_timeout),
         llm_model_kwargs={
             "host": cfg.ollama_url,
             "options": {
@@ -238,6 +240,15 @@ async def run_ingestion(
         logger.info(f"  Inserting into LightRAG knowledge graph (id='{doc_id}')...")
         try:
             await rag.ainsert(doc, ids=[doc_id])
+
+            doc_status = await rag.doc_status.get_by_id(doc_id)
+            if doc_status and doc_status.get("status") == "failed":
+                msg = f"LightRAG ingestion failed internally: {doc_status.get('error_msg', 'Unknown error')}"
+                logger.error(f"  {msg}")
+                state.mark_failed(filename, msg)
+                failed.append(filename)
+                continue
+
         except Exception as exc:
             msg = f"Ingestion error: {exc}"
             logger.error(f"  {msg}", exc_info=True)

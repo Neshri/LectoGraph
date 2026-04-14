@@ -24,6 +24,7 @@ request_retries: 1
 # ─── LightRAG / Ollama ───────────────────────────────────────────────────────
 ollama_url: http://127.0.0.1:11434
 rag_llm_model: qwen3:32b
+rag_request_timeout: 600.0
 # WARNING: Do NOT change rag_embedding_model or rag_embedding_dim after the
 # knowledge_db has been created. The stored vectors will be incompatible with
 # the new model and queries will silently return garbage. If you need to switch
