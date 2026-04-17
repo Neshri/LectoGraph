@@ -1,7 +1,16 @@
 import requests
+import yaml
+import os
 
-OLLAMA_URL = "http://127.0.0.1:11434"
-LLM_MODEL = "qwen3:32b"
+def load_config(config_path="config.yaml"):
+    if not os.path.exists(config_path):
+        return {}
+    with open(config_path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+config = load_config()
+OLLAMA_URL = config.get("ollama_url", "http://127.0.0.1:11434")
+LLM_MODEL = config.get("summary_model", "gemma4:31b")
 
 def ollama_complete(
     model=LLM_MODEL, prompt=None, system_prompt=None, history_messages=None, **kwargs
