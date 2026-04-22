@@ -15,9 +15,9 @@ frame_analysis_model: glm-ocr
 summary_model: gemma4:31b
 
 min_frames: 5
-max_frames: 45
+max_frames: 55
 frames_per_minute: 3.0
-frame_threshold: 70.0          # DynamicFrameSelector scene-change sensitivity
+frame_threshold: 50.0          # DynamicFrameSelector scene-change sensitivity
 request_timeout: 600.0         # Seconds before Ollama request times out
 request_retries: 1
 
