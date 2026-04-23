@@ -18,12 +18,7 @@ import json
 import sys
 from pathlib import Path
 
-# ─── CJK detection ────────────────────────────────────────────────────────────
-
-_CJK_RANGE = range(0x4E00, 0xA000)
-
-def _contains_cjk(text: str) -> bool:
-    return any(ord(ch) in _CJK_RANGE for ch in text)
+from lectograph.pipeline import _is_faulty
 
 # ─── Main ──────────────────────────────────────────────────────────────────────
 
@@ -57,12 +52,12 @@ async def main(delete: bool) -> int:
     for doc_id, entry in full_docs.items():
         # LightRAG stores either the raw string or a dict with a 'content' key
         content = entry if isinstance(entry, str) else entry.get("content", "")
-        if _contains_cjk(content):
+        if _is_faulty(content):
             preview = content[:80].replace("\n", " ")
             faulty.append((doc_id, preview))
 
     if not faulty:
-        print("\nNo documents with Chinese characters found. Nothing to do.\n")
+        print("\nNo faulty documents found in LightRAG. Nothing to do.\n")
         return 0
 
     print(f"\nFound {len(faulty)} faulty document(s):\n")
