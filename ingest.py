@@ -83,8 +83,7 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Automatically detect documents with known quality issues (Chinese "
             "characters, known Whisper mishearings), remove them from LightRAG, "
-            "and re-ingest them. Also recovers docs left in a broken state by a "
-            "previous crashed run."
+            "and re-ingest them."
         ),
     )
     return p.parse_args()
@@ -236,28 +235,15 @@ async def main_async(args: argparse.Namespace) -> int:
     reingest_targets: list[str] | None = None
 
     if args.reingest_faulty:
-        from lectograph.pipeline import detect_faulty_docs, detect_missing_from_lightrag
-        faulty  = detect_faulty_docs(cfg.docs_dir, state)
-        missing = detect_missing_from_lightrag(cfg.working_dir, state)
-
-        # Merge without duplicates (faulty first, then crash-recovery missing docs).
-        seen = set(faulty)
-        extra = [f for f in missing if f not in seen]
-        if extra:
-            logger.info(
-                f"Found {len(extra)} doc(s) missing from LightRAG (crash recovery — "
-                "deleted from graph but state DB not yet reset): "
-                + ", ".join(extra)
-            )
-        reingest_targets = faulty + extra
+        from lectograph.pipeline import detect_faulty_docs
+        reingest_targets = detect_faulty_docs(cfg.docs_dir, state)
 
         if not reingest_targets:
             logger.info("No faulty documents detected — nothing to re-ingest.")
             state.close()
             return 0
         logger.info(
-            f"Detected {len(reingest_targets)} document(s) to re-ingest "
-            f"({len(faulty)} faulty, {len(extra)} missing): "
+            f"Detected {len(reingest_targets)} faulty document(s): "
             + ", ".join(reingest_targets)
         )
     elif args.reingest:

@@ -49,6 +49,10 @@ def parse_args() -> argparse.Namespace:
         "--strict", action="store_true",
         help="Append a Swedish instruction to only answer from lesson material.",
     )
+    p.add_argument(
+        "--references", action="store_true",
+        help="Include source references in the LLM response.",
+    )
     return p.parse_args()
 
 
@@ -128,6 +132,7 @@ async def run_query(args: argparse.Namespace) -> int:
                 mode=args.mode,
                 top_k=args.top_k,
                 enable_rerank=False,
+                include_references=args.references,
             ),
         )
     except Exception as e:

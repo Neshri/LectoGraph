@@ -337,34 +337,6 @@ def detect_faulty_docs(docs_dir: Path, state: StateDB) -> list[str]:
 
     return faulty
 
-
-def detect_missing_from_lightrag(working_dir: Path, state: StateDB) -> list[str]:
-    """
-    Return filenames that are marked 'ingested' in the state DB but whose
-    doc ID is absent from LightRAG's ``kv_store_full_docs.json``.
-
-    This catches videos left in a half-deleted state after a crash during
-    a previous ``--reingest-faulty`` run: LightRAG deletion succeeded but
-    the state DB reset to 'pending' never completed.
-    """
-    kv_path = working_dir / "kv_store_full_docs.json"
-    if not kv_path.exists():
-        return []
-
-    try:
-        rag_doc_ids = set(json.loads(kv_path.read_text(encoding="utf-8")).keys())
-    except (OSError, json.JSONDecodeError):
-        return []
-
-    missing = []
-    for r in state.get_all():
-        if r["status"] == "ingested":
-            stem = Path(r["filename"]).stem
-            if stem not in rag_doc_ids:
-                missing.append(r["filename"])
-    return missing
-
-
 # ─── Re-ingest pipeline ───────────────────────────────────────────────────────
 
 async def run_reingest(
