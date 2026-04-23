@@ -23,6 +23,9 @@ class Config:
     # ── OpenSceneSense ────────────────────────────────────────────────────────
     whisper_model: str = "KBLab/kb-whisper-large"
     whisper_device: str = "cuda"
+    # Vocabulary hint passed to Whisper as initial_prompt. Helps correct
+    # accent-driven mishearings. Empty string = no prompt (Whisper default).
+    whisper_initial_prompt: str = ""
     frame_analysis_model: str = "glm-ocr"
     summary_model: str = "qwen3:32b"
     min_frames: int = 5

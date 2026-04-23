@@ -11,6 +11,16 @@ logs_dir: ./logs               # One log file per run, named by timestamp
 # ─── OpenSceneSense (video analysis) ─────────────────────────────────────────
 whisper_model: KBLab/kb-whisper-large
 whisper_device: cuda           # "cuda" or "cpu"
+
+# Vocabulary hint for Whisper — helps correct accent-driven mishearings.
+# Written as natural text; Whisper uses this as a transcription prior.
+# Add terms here as new mishearings are discovered.
+whisper_initial_prompt: >
+  DHCP, DNS, TCP/IP, IP-adress, subnet, subnetmask, gateway, router, switch, VLAN, NAT,
+  SSH, RDP, HTTP, HTTPS, FTP, SMTP, IMAP, VPN, firewall, ACL, OSPF, BGP,
+  Active Directory, GPO, LDAP, Kerberos, PowerShell, CMD, config, configuration,
+  ping, traceroute, netstat, ipconfig, nslookup,
+  Cisco, Windows Server, virtualisering, nätverkskort, server, klient
 frame_analysis_model: glm-ocr
 summary_model: gemma4:31b
 

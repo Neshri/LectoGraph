@@ -13,23 +13,28 @@ from openscenesense_ollama.models import AudioSegment
 
 
 class FasterWhisperAdapter(AudioTranscriber):
-    def __init__(self, model_name: str, device: str = "cuda"):
+    def __init__(self, model_name: str, device: str = "cuda", initial_prompt: str | None = None):
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
-        
+        self.initial_prompt = initial_prompt or None
+
         self.logger.info(f"Loading faster-whisper model '{model_name}' on {device}")
+        if self.initial_prompt:
+            self.logger.info(f"Whisper initial_prompt set ({len(self.initial_prompt)} chars)")
         compute_type = "float16" if device == "cuda" else "int8"
-        
+
         self.model = WhisperModel(model_name, device=device, compute_type=compute_type)
 
     def transcribe(self, video_path: str) -> List[AudioSegment]:
         self.logger.info(f"Starting faster-whisper transcription for {video_path}")
         
-        # condition_on_previous_text=False prevents the infinite looping/deadlock bug
+        # condition_on_previous_text=False prevents the infinite looping/deadlock bug.
+        # initial_prompt seeds Whisper with domain vocabulary to reduce mishearings.
         segments_generator, _ = self.model.transcribe(
             video_path,
             beam_size=5,
-            condition_on_previous_text=False 
+            condition_on_previous_text=False,
+            initial_prompt=self.initial_prompt,
         )
         
         transcribed_segments = []

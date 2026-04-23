@@ -11,7 +11,9 @@ Responsibilities:
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 import threading
 from pathlib import Path
 from typing import Optional
@@ -88,6 +90,7 @@ def build_analyzer(cfg: Config, logger: logging.Logger):
     transcriber = FasterWhisperAdapter(
         model_name=cfg.whisper_model,
         device=cfg.whisper_device,
+        initial_prompt=cfg.whisper_initial_prompt or None,
     )
 
     analyzer = OllamaVideoAnalyzer(
@@ -273,13 +276,37 @@ def _contains_cjk(text: str) -> bool:
     return any(ord(ch) in _CJK_RANGE for ch in text)
 
 
+# Known Whisper mishearings for this course.
+# Key = bad term Whisper wrote, value = what was actually said (documentation only).
+# Add new entries here as they are discovered.
+_KNOWN_BAD_TERMS: dict[str, str] = {
+    "DOCP":   "DHCP",    # teacher's skånska accent
+    "comfig": "config",  # teacher's skånska accent
+}
+
+# Pre-compiled whole-word, case-insensitive patterns (built once at import time).
+_BAD_TERM_PATTERNS: list[re.Pattern] = [
+    re.compile(r"\b" + re.escape(term) + r"\b", re.IGNORECASE)
+    for term in _KNOWN_BAD_TERMS
+]
+
+
+def _is_faulty(text: str) -> bool:
+    """Return True if *text* contains CJK characters or any known-bad Whisper term."""
+    if _contains_cjk(text):
+        return True
+    return any(p.search(text) for p in _BAD_TERM_PATTERNS)
+
+
 def detect_faulty_docs(docs_dir: Path, state: StateDB) -> list[str]:
     """
-    Scan every saved knowledge-document in *docs_dir* for CJK characters.
+    Scan every saved knowledge-document in *docs_dir* for known quality issues:
+    - CJK (Chinese) characters — LLM hallucination artefact
+    - Known Whisper mishearings (see ``_KNOWN_BAD_TERMS``)
 
     Returns a list of video *filenames* (e.g. 'cisco23.mp4') whose saved
-    ``_ingested.txt`` contains Chinese characters.  Only files that are also
-    tracked in the state DB (as 'ingested') are considered.
+    ``_ingested.txt`` is faulty.  Only files tracked in the state DB as
+    'ingested' are considered.
     """
     faulty: list[str] = []
 
@@ -305,10 +332,37 @@ def detect_faulty_docs(docs_dir: Path, state: StateDB) -> list[str]:
         except OSError:
             continue
 
-        if _contains_cjk(content):
+        if _is_faulty(content):
             faulty.append(stem_to_filename[stem])
 
     return faulty
+
+
+def detect_missing_from_lightrag(working_dir: Path, state: StateDB) -> list[str]:
+    """
+    Return filenames that are marked 'ingested' in the state DB but whose
+    doc ID is absent from LightRAG's ``kv_store_full_docs.json``.
+
+    This catches videos left in a half-deleted state after a crash during
+    a previous ``--reingest-faulty`` run: LightRAG deletion succeeded but
+    the state DB reset to 'pending' never completed.
+    """
+    kv_path = working_dir / "kv_store_full_docs.json"
+    if not kv_path.exists():
+        return []
+
+    try:
+        rag_doc_ids = set(json.loads(kv_path.read_text(encoding="utf-8")).keys())
+    except (OSError, json.JSONDecodeError):
+        return []
+
+    missing = []
+    for r in state.get_all():
+        if r["status"] == "ingested":
+            stem = Path(r["filename"]).stem
+            if stem not in rag_doc_ids:
+                missing.append(r["filename"])
+    return missing
 
 
 # ─── Re-ingest pipeline ───────────────────────────────────────────────────────
