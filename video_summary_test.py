@@ -28,7 +28,8 @@ def main():
 
     transcriber = FasterWhisperAdapter(
         model_name=cfg.whisper_model,
-        device=cfg.whisper_device
+        device=cfg.whisper_device,
+        initial_prompt=cfg.whisper_initial_prompt
     )
 
     custom_prompts = AnalysisPrompts(
