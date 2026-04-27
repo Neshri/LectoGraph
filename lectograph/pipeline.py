@@ -91,6 +91,7 @@ def build_analyzer(cfg: Config, logger: logging.Logger):
         model_name=cfg.whisper_model,
         device=cfg.whisper_device,
         initial_prompt=cfg.whisper_initial_prompt or None,
+        hotwords=cfg.whisper_hotwords or None,
     )
 
     analyzer = OllamaVideoAnalyzer(

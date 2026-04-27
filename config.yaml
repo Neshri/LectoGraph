@@ -14,8 +14,11 @@ whisper_device: cuda           # "cuda" or "cpu"
 
 # Vocabulary hint for Whisper — helps correct accent-driven mishearings.
 # Written as natural text; Whisper uses this as a transcription prior.
-# Add terms here as new mishearings are discovered.
-whisper_initial_prompt: >
+whisper_initial_prompt: "Detta är en teknisk lektion på svenska om IT, datorer, nätverk, operativsystem och mjukvara."
+
+# Comma-separated list of technical terms to explicitly boost during decoding.
+# Add terms here as new mishearings (like DOCP -> DHCP) are discovered.
+whisper_hotwords: >
   DHCP, DNS, TCP/IP, IP-adress, subnet, subnetmask, gateway, router, switch, VLAN, NAT,
   SSH, RDP, HTTP, HTTPS, FTP, SMTP, IMAP, VPN, firewall, ACL, OSPF, BGP,
   Active Directory, GPO, LDAP, Kerberos, PowerShell, CMD, config, configuration,
