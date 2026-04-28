@@ -31,15 +31,18 @@ class FasterWhisperAdapter(AudioTranscriber):
     def transcribe(self, video_path: str) -> List[AudioSegment]:
         self.logger.info(f"Starting faster-whisper transcription for {video_path}")
         
-        # condition_on_previous_text=False prevents the infinite looping/deadlock bug.
-        # initial_prompt seeds Whisper with domain vocabulary to reduce mishearings.
-        # hotwords forcibly boosts the probability of these specific terms during decoding.
+        # condition_on_previous_text=True is REQUIRED for initial_prompt and hotwords
+        # to persist past the first 30 seconds of the video. Without it, Whisper forgets
+        # the IT context.
+        # vad_filter=True prevents the infinite looping/hallucination bug during silence
+        # which is why condition_on_previous_text was originally set to False.
         segments_generator, _ = self.model.transcribe(
             video_path,
             beam_size=5,
-            condition_on_previous_text=False,
+            condition_on_previous_text=True,
             initial_prompt=self.initial_prompt,
             hotwords=self.hotwords,
+            vad_filter=True,
         )
         
         transcribed_segments = []
