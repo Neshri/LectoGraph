@@ -29,5 +29,4 @@ It uses a multi-modal pipeline: vision processing (`glm-ocr` for frame analysis)
 *   **Document Formatting**: The text fed into LightRAG (`format_knowledge_doc`) must be dense, factual prose. Do not include operational metadata (like frame counts or timestamps) as they create junk graph triples and dilute extraction quality.
 *   **Immutable Embeddings**: The `rag_embedding_model` and `rag_embedding_dim` cannot be changed after the database is created without wiping the DB entirely. Treat these as immutable in production code.
 ### 5. AI Hallucination & Patching Rules
-*   The project actively mitigates Whisper/LLM hallucinations (e.g., "DOCP" instead of "DHCP", Chinese characters injected by OCR). 
 *   If adding new hallucination checks, implement them cleanly in `lectograph/pipeline.py` (e.g., `_is_faulty()`), keeping regex patterns compiled globally to ensure high performance.
