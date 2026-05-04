@@ -125,3 +125,40 @@ transcript_correction_prompt: |
 
   Transkription:
   {transcript}
+
+# ─── Transcript critique ─────────────────────────────────────────────────────
+# Prompt used by _critique_replacements() to review the corrector's output.
+# Receives the same summaries + transcript, plus the proposed replacements JSON.
+# Must return ONLY a JSON object with "approved" and "rejected" lists.
+# Placeholders: {brief}, {detailed}, {transcript}, {replacements}
+transcript_critique_prompt: |
+  Du är en granskare av korrekturförslag för svenska IT-lektioner.
+  Du har fått en lista med föreslagna ordbyten i en transkription.
+  Din uppgift är att granska varje förslag och avgöra om det är korrekt.
+
+  Godkänn ett förslag ENDAST om:
+  - Det "felaktiga" ordet faktiskt verkar vara ett avlyssningsfel från Whisper.
+  - Det "rätta" ordet stämmer med referenssammanfattningen.
+  - Bytet INTE ersätter ett korrekt tekniskt begrepp med ett felaktigt.
+
+  Avvisa ett förslag om:
+  - Det "felaktiga" ordet är ett korrekt tekniskt begrepp som nämns i referensen.
+  - Det "rätta" ordet inte stämmer med sammanhanget.
+  - Bytet ändrar meningen eller precisionen på ett felaktigt sätt.
+
+  Returnera ett JSON-objekt med exakt dessa två fält:
+  - "approved": lista av godkända {{"wrong": "...", "right": "..."}} par.
+  - "rejected": lista av avvisade {{"wrong": "...", "right": "...", "reason": "..."}} par.
+  Returnera ENDAST giltig JSON, inget annat — inga förklaringar, inga kodblock.
+
+  Referenssammanfattning (kort):
+  {brief}
+
+  Referenssammanfattning (detaljerad):
+  {detailed}
+
+  Transkription (original):
+  {transcript}
+
+  Föreslagna ordbyten (JSON):
+  {replacements}

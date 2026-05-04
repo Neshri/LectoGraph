@@ -57,6 +57,7 @@ class Config:
     detailed_summary_prompt: str = ""
     brief_summary_prompt: str = ""
     transcript_correction_prompt: str = ""
+    transcript_critique_prompt: str = ""
 
     # ── Derived helpers ───────────────────────────────────────────────────────
     @property

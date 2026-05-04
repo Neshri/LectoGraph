@@ -400,6 +400,15 @@ async def correct_transcript(
         logger.info("  Transcript correction: no replacements suggested.")
         return transcript
 
+    # ── Critique: filter out over-corrections before applying ─────────────────
+    replacements = await _critique_replacements(
+        replacements, transcript, brief, detailed, cfg, logger
+    )
+
+    if not replacements:
+        logger.info("  Transcript correction: all suggestions rejected by critique — no changes made.")
+        return transcript
+
     corrected = transcript
     for item in replacements:
         wrong = item.get("wrong", "")
@@ -414,6 +423,74 @@ async def correct_transcript(
             )
 
     return corrected
+
+
+async def _critique_replacements(
+    replacements: list[dict],
+    transcript: str,
+    brief: str,
+    detailed: str,
+    cfg: Config,
+    logger: logging.Logger,
+) -> list[dict]:
+    """
+    Ask the summary LLM to review the proposed replacement list and filter out
+    any over-corrections — e.g. replacing a legitimate technical term with an
+    incorrect one, or making changes that contradict the reference summaries.
+
+    Returns the approved subset of *replacements*.  On any failure the original
+    list is returned unchanged (fail-safe).
+    """
+    import ollama as _ollama
+
+    prompt = cfg.transcript_critique_prompt.format(
+        brief=brief,
+        detailed=detailed,
+        transcript=transcript,
+        replacements=json.dumps(replacements, ensure_ascii=False, indent=2),
+    )
+
+    try:
+        client = _ollama.AsyncClient(host=cfg.ollama_url)
+        response = await client.chat(
+            model=cfg.summary_model,
+            messages=[{"role": "user", "content": prompt}],
+            options={"temperature": 0.0},
+        )
+        raw: str = response.message.content
+    except Exception as exc:
+        logger.warning(
+            "_critique_replacements: LLM call failed (%s) — using original replacements.", exc
+        )
+        return replacements
+
+    # Strip markdown code fences if the model wrapped its JSON.
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = re.sub(r"^```[a-z]*\n?", "", raw).rstrip("`").strip()
+
+    try:
+        data = json.loads(raw)
+        approved: list[dict] = data.get("approved", [])
+        rejected: list[dict] = data.get("rejected", [])
+    except (json.JSONDecodeError, AttributeError) as exc:
+        logger.warning(
+            "_critique_replacements: could not parse critique response as JSON (%s)"
+            " — using original replacements.",
+            exc,
+        )
+        logger.debug("Raw critique response: %s", raw)
+        return replacements
+
+    for item in rejected:
+        logger.info(
+            "  Transcript critique REJECTED: '%s' → '%s' — %s",
+            item.get("wrong", "?"),
+            item.get("right", "?"),
+            item.get("reason", "no reason given"),
+        )
+
+    return approved
 
 
 def detect_faulty_docs(docs_dir: Path, state: StateDB) -> list[str]:
