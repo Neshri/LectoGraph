@@ -114,7 +114,7 @@ transcript_correction_prompt: |
   1. Identifiera ord i transkriptionen som verkar felstavade eller felavlyssnade
      jämfört med referensen.
   2. Returnera ett JSON-objekt med ett enda fält "replacements" — en lista av
-     {"wrong": "...", "right": "..."} par. Listan kan vara tom om inget hittas.
+     {{"wrong": "...", "right": "..."}} par. Listan kan vara tom om inget hittas.
   3. Returnera ENDAST giltig JSON, inget annat — inga förklaringar, inga kodblock.
 
   Referenssammanfattning (kort):
