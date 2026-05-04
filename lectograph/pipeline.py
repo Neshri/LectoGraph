@@ -358,7 +358,7 @@ async def correct_transcript(
     Fail-safe: if the LLM call fails or returns malformed JSON the original
     transcript is returned unchanged so ingestion is never blocked.
     """
-    from lightrag.llm.ollama import ollama_model_complete
+    import ollama as _ollama
 
     prompt = cfg.transcript_correction_prompt.format(
         brief=brief,
@@ -367,12 +367,13 @@ async def correct_transcript(
     )
 
     try:
-        raw: str = await ollama_model_complete(
-            prompt,
+        client = _ollama.AsyncClient(host=cfg.ollama_url)
+        response = await client.chat(
             model=cfg.summary_model,
-            host=cfg.ollama_url,
+            messages=[{"role": "user", "content": prompt}],
             options={"temperature": 0.0},
         )
+        raw: str = response.message.content
     except Exception as exc:
         logger.warning(
             "correct_transcript: LLM call failed (%s) — using original transcript.", exc

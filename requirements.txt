@@ -14,6 +14,7 @@ openai-whisper>=20240930
 transformers>=4.35.0
 
 # --- Other Application Dependencies ---
+ollama
 ffmpeg-python>=0.2.0
 markdown
 msal>=1.26.0
