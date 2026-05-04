@@ -230,6 +230,32 @@ async def run_ingestion(
             failed.append(filename)
             continue
 
+        # ── Step 1.5: Correct transcript if it contains known-bad terms ───────
+        if _transcript_needs_correction(results.summary.transcript):
+            if _summaries_are_clean(results.summary.brief, results.summary.detailed):
+                logger.info("  Transcript contains known-bad terms; summaries are clean — correcting...")
+                results.summary.transcript = await correct_transcript(
+                    results.summary.transcript,
+                    results.summary.brief,
+                    results.summary.detailed,
+                    cfg,
+                    logger,
+                )
+            else:
+                bad_terms = [
+                    t for t in _KNOWN_BAD_TERMS
+                    if t.lower() in
+                    (results.summary.brief + " " + results.summary.detailed).lower()
+                ]
+                msg = (
+                    f"Bad terms {bad_terms} found in both transcript and summaries — "
+                    "summaries unusable as correction reference."
+                )
+                logger.warning("  %s", msg)
+                state.mark_failed(filename, msg)
+                failed.append(filename)
+                continue
+
         # ── Step 2: Format + save knowledge document ───────────────────────
         doc = format_knowledge_doc(video_path, results)
         doc_path = cfg.docs_dir / (video_path.stem + "_ingested.txt")
@@ -312,6 +338,81 @@ def _summaries_are_clean(brief: str, detailed: str) -> bool:
     """
     combined = brief + " " + detailed
     return not any(p.search(combined) for p in _BAD_TERM_PATTERNS)
+
+
+async def correct_transcript(
+    transcript: str,
+    brief: str,
+    detailed: str,
+    cfg: Config,
+    logger: logging.Logger,
+) -> str:
+    """
+    Ask the summary LLM to find and fix Whisper mishearings in *transcript*,
+    using *brief* and *detailed* summaries as a trusted factual reference.
+
+    The LLM is prompted to return a JSON object with a single ``replacements``
+    list of ``{"wrong": "...", "right": "..."}`` pairs.  Each pair is applied
+    as a whole-word, case-insensitive substitution.
+
+    Fail-safe: if the LLM call fails or returns malformed JSON the original
+    transcript is returned unchanged so ingestion is never blocked.
+    """
+    from lightrag.llm.ollama import ollama_model_complete
+
+    prompt = cfg.transcript_correction_prompt.format(
+        brief=brief,
+        detailed=detailed,
+        transcript=transcript,
+    )
+
+    try:
+        raw: str = await ollama_model_complete(
+            prompt,
+            model=cfg.summary_model,
+            host=cfg.ollama_url,
+            options={"temperature": 0.0},
+        )
+    except Exception as exc:
+        logger.warning(
+            "correct_transcript: LLM call failed (%s) — using original transcript.", exc
+        )
+        return transcript
+
+    # Strip markdown code fences if the model wrapped its JSON.
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = re.sub(r"^```[a-z]*\n?", "", raw).rstrip("`").strip()
+
+    try:
+        data = json.loads(raw)
+        replacements: list[dict] = data.get("replacements", [])
+    except (json.JSONDecodeError, AttributeError) as exc:
+        logger.warning(
+            "correct_transcript: could not parse LLM response as JSON (%s) — using original.",
+            exc,
+        )
+        logger.debug("Raw LLM response: %s", raw)
+        return transcript
+
+    if not replacements:
+        logger.info("  Transcript correction: no replacements suggested.")
+        return transcript
+
+    corrected = transcript
+    for item in replacements:
+        wrong = item.get("wrong", "")
+        right = item.get("right", "")
+        if not wrong or not right:
+            continue
+        pattern = re.compile(r"\b" + re.escape(wrong) + r"\b", re.IGNORECASE)
+        corrected, n = pattern.subn(right, corrected)
+        if n:
+            logger.info(
+                "  Transcript correction: '%s' → '%s' (%d occurrence(s))", wrong, right, n
+            )
+
+    return corrected
 
 
 def detect_faulty_docs(docs_dir: Path, state: StateDB) -> list[str]:

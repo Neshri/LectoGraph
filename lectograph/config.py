@@ -56,6 +56,7 @@ class Config:
     frame_analysis_prompt: str = ""
     detailed_summary_prompt: str = ""
     brief_summary_prompt: str = ""
+    transcript_correction_prompt: str = ""
 
     # ── Derived helpers ───────────────────────────────────────────────────────
     @property

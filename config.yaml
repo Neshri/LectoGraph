@@ -100,3 +100,28 @@ brief_summary_prompt: |
 
   {transcript}
 
+# ─── Transcript correction ────────────────────────────────────────────────────
+# Prompt used by correct_transcript() when the Whisper transcript contains a
+# known-bad term but the summaries are clean enough to act as a reference.
+# The model must return ONLY a JSON object — no prose, no code fences.
+# Placeholders: {brief}, {detailed}, {transcript}
+transcript_correction_prompt: |
+  Du är en korrekturläsare för svenska IT-lektioner.
+  Transkriptionen nedan innehåller troligen felavlyssnade ord från Whisper.
+  Du har en pålitlig referenssammanfattning att jämföra med.
+
+  Din uppgift:
+  1. Identifiera ord i transkriptionen som verkar felstavade eller felavlyssnade
+     jämfört med referensen.
+  2. Returnera ett JSON-objekt med ett enda fält "replacements" — en lista av
+     {"wrong": "...", "right": "..."} par. Listan kan vara tom om inget hittas.
+  3. Returnera ENDAST giltig JSON, inget annat — inga förklaringar, inga kodblock.
+
+  Referenssammanfattning (kort):
+  {brief}
+
+  Referenssammanfattning (detaljerad):
+  {detailed}
+
+  Transkription:
+  {transcript}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import logging
 import sys
 from pathlib import Path
@@ -62,6 +63,7 @@ def main() -> None:
         _KNOWN_BAD_TERMS,
         _summaries_are_clean,
         _transcript_needs_correction,
+        correct_transcript,
         format_knowledge_doc,
     )
 
@@ -104,25 +106,36 @@ def main() -> None:
         print(f"\nFAILED — raw output written to {output_file} for diagnosis.")
         sys.exit(1)
 
+    # ── LLM correction ───────────────────────────────────────────────────────
+    corrections_applied: list[str] = []
+    if transcript_dirty:
+        log.info("Transcript contains known-bad terms; summaries are clean — correcting...")
+        original_transcript = results.summary.transcript
+        results.summary.transcript = asyncio.run(
+            correct_transcript(
+                results.summary.transcript,
+                results.summary.brief,
+                results.summary.detailed,
+                cfg,
+                log,
+            )
+        )
+        # Detect which terms were actually removed by the correction.
+        for term in _KNOWN_BAD_TERMS:
+            if term.lower() in original_transcript.lower() and \
+               term.lower() not in results.summary.transcript.lower():
+                corrections_applied.append(f"'{term}' → '{_KNOWN_BAD_TERMS[term]}'")
+
     # ── Write output ──────────────────────────────────────────────────────────
     doc = format_knowledge_doc(video_path_obj, results)
 
     with open(output_file, "w", encoding="utf-8") as fh:
         if transcript_dirty:
-            # Summaries are clean → LLM correction is feasible; flag for awareness.
-            bad_terms_found = [
-                t for t in _KNOWN_BAD_TERMS
-                if t.lower() in results.summary.transcript.lower()
-            ]
-            log.warning(
-                "Known bad terms found in transcript but summaries are clean — "
-                "LLM correction will be needed before ingestion. Bad terms: %s",
-                bad_terms_found,
-            )
-            fh.write(f"WARNING: Transcript contains known bad terms: {bad_terms_found}\n")
-            fh.write("Summaries are clean — LLM correction is feasible before ingestion.\n")
+            if corrections_applied:
+                fh.write(f"NOTE: Transcript was corrected by LLM. Replacements: {', '.join(corrections_applied)}\n")
+            else:
+                fh.write("NOTE: Transcript had known bad terms; LLM correction ran but suggested no changes.\n")
             fh.write("=" * 72 + "\n\n")
-
         fh.write(doc)
 
     print(f"\nResults have been written to {output_file}")
