@@ -299,6 +299,21 @@ def _is_faulty(text: str) -> bool:
     return any(p.search(text) for p in _BAD_TERM_PATTERNS)
 
 
+def _transcript_needs_correction(transcript: str) -> bool:
+    """Return True if the raw Whisper transcript contains any known-bad term."""
+    return any(p.search(transcript) for p in _BAD_TERM_PATTERNS)
+
+
+def _summaries_are_clean(brief: str, detailed: str) -> bool:
+    """Return True if neither summary contains a known-bad term.
+
+    A clean summary can be used as a trusted reference to correct the transcript.
+    If the summaries are also contaminated the LLM correction path is not safe to use.
+    """
+    combined = brief + " " + detailed
+    return not any(p.search(combined) for p in _BAD_TERM_PATTERNS)
+
+
 def detect_faulty_docs(docs_dir: Path, state: StateDB) -> list[str]:
     """
     Scan every saved knowledge-document in *docs_dir* for known quality issues:
