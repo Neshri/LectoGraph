@@ -123,11 +123,11 @@ def main():
     rare = sorted([t for t, c in counts.items() if 1 <= c <= args.max_rare])
 
     print(f"Found {len(common)} common terms and {len(rare)} rare terms.")
-    print("Searching for high-confidence near-misses (Length >= 4, Ratio >= 20x)...")
+    print("Searching for near-misses (Length >= 4, Ratio >= 1.5x)...")
 
     near_misses = []
     for r in rare:
-        if len(r) < 4: # Skip short noisy acronyms
+        if len(r) < 4:
             continue
             
         r_count = counts[r]
@@ -136,8 +136,8 @@ def main():
                 continue
                 
             c_count = counts[c]
-            # Only care if the common term is significantly more frequent
-            if c_count < r_count * 20:
+            # Lower ratio (1.5x) to catch persistent hallucinations like DOCP
+            if c_count < r_count * 1.5:
                 continue
                 
             if levenshtein(r, c) == 1:
@@ -145,16 +145,10 @@ def main():
                 break 
 
     if not near_misses:
-        print("No high-confidence near-misses found.")
+        print("No candidates found.")
         return
 
-    print(f"\nFound {len(near_misses)} high-confidence hallucinations:")
-    print("-" * 80)
-    print(f"{'Rare Term':<20} {'Freq':<5} -> {'Common Target':<20} {'Freq':<5}")
-    print("-" * 80)
-    for wrong, right, r_c, c_c in near_misses:
-        print(f"  {wrong:<18} ({r_c})    -> {right:<18} ({c_c})")
-    print("-" * 80)
+    print(f"\nFound {len(near_misses)} candidates. Sending to LLM for technical audit...")
 
     if args.audit:
         import asyncio
@@ -166,15 +160,24 @@ def main():
         ollama_url = cfg.get("ollama_url", "http://127.0.0.1:11434")
         model = cfg.get("summary_model", "gemma4:31b")
         
-        hallucinations = asyncio.run(audit_with_llm(near_misses, ollama_url, model))
+        # Prepare pairs for the LLM
+        audit_pairs = [(m[0], m[1]) for m in near_misses]
+        hallucinations = asyncio.run(audit_with_llm(audit_pairs, ollama_url, model))
         
         if hallucinations:
-            print("\nLLM Confirmed Hallucinations:")
-            print("=" * 60)
+            print("\n" + "="*60)
+            print(f"{'WHISPER ERROR':<20} -> {'ACTUAL TERM':<20} | {'REASON'}")
+            print("-" * 60)
             for h in hallucinations:
-                print(f"  {h.get('wrong', '?'):<15} -> {h.get('right', '?')}")
+                wrong = h.get('wrong', '?')
+                right = h.get('right', '?')
+                # Find counts from our near_misses list
+                stats = next((m for m in near_misses if m[0] == wrong), (0,0,0,0))
+                print(f"  {wrong:<18} -> {right:<18} | {stats[2]} vs {stats[3]} hits")
             print("=" * 60)
-            print(f"\nAdd these to _KNOWN_BAD_TERMS in pipeline.py.")
+            print(f"\nAdd the verified errors to _KNOWN_BAD_TERMS in pipeline.py.")
+        else:
+            print("\nLLM found no obvious hallucinations in the candidate list.")
 
 if __name__ == "__main__":
     main()
