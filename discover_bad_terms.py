@@ -123,27 +123,38 @@ def main():
     rare = sorted([t for t, c in counts.items() if 1 <= c <= args.max_rare])
 
     print(f"Found {len(common)} common terms and {len(rare)} rare terms.")
-    print("Searching for near-misses (Levenshtein distance <= 1)...")
+    print("Searching for high-confidence near-misses (Length >= 4, Ratio >= 20x)...")
 
     near_misses = []
     for r in rare:
+        if len(r) < 4: # Skip short noisy acronyms
+            continue
+            
+        r_count = counts[r]
         for c in common:
-            # We only care about terms of similar length
             if abs(len(r) - len(c)) > 1:
                 continue
+                
+            c_count = counts[c]
+            # Only care if the common term is significantly more frequent
+            if c_count < r_count * 20:
+                continue
+                
             if levenshtein(r, c) == 1:
-                near_misses.append((r, c))
-                break # move to next rare term
+                near_misses.append((r, c, r_count, c_count))
+                break 
 
     if not near_misses:
-        print("No near-misses found with distance 1. Try distance 2?")
+        print("No high-confidence near-misses found.")
         return
 
-    print(f"\nFound {len(near_misses)} high-probability hallucinations (Near-Misses):")
-    print("-" * 60)
-    for wrong, right in near_misses:
-        print(f"  {wrong:<15} -> {right} (vanlig term)")
-    print("-" * 60)
+    print(f"\nFound {len(near_misses)} high-confidence hallucinations:")
+    print("-" * 80)
+    print(f"{'Rare Term':<20} {'Freq':<5} -> {'Common Target':<20} {'Freq':<5}")
+    print("-" * 80)
+    for wrong, right, r_c, c_c in near_misses:
+        print(f"  {wrong:<18} ({r_c})    -> {right:<18} ({c_c})")
+    print("-" * 80)
 
     if args.audit:
         import asyncio
