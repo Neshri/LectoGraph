@@ -307,8 +307,41 @@ def _contains_cjk(text: str) -> bool:
 # Key = bad term Whisper wrote, value = what was actually said (documentation only).
 # Add new entries here as they are discovered.
 _KNOWN_BAD_TERMS: dict[str, str] = {
-    "DOCP":   "DHCP",    # teacher's skånska accent
-    "comfig": "config",  # teacher's skånska accent
+    "DOCP":   "DHCP",
+    "DOCPS":  "DHCP",
+    "COMFIG": "CONFIG",
+    "HTSP":   "HTTP",
+    "HTTB":   "HTTP",
+    "HTTPD":  "HTTP",
+    "VELAN":  "VLAN",
+    "UEFE":   "UEFI",
+    "UEFY":   "UEFI",
+    "CTFS":   "NTFS",
+    "NTFLS":  "NTFS",
+    "EPFIRE": "IPFIRE",
+    "IPW6":   "IPv6",
+    "IPvS6":  "IPv6",
+    "IPw6":   "IPv6",
+    "IPv4S":  "IPv4",
+    "IPv4s":  "IPv4",
+    "PIXE":   "PXE",
+    "SSHI":   "SSH",
+    "CSVD":   "CSV",
+    "EFAT":   "EXFAT",
+    "EXD2":   "EXT2",
+    "EXD4":   "EXT4",
+    "IEEI":   "IEEE",
+    "LTLM":   "NTLM",
+    "NAWT":   "NAT",
+    "OSPFO":  "OSPF",
+    "PINGA":  "PING",
+    "RDPL":   "RDP",
+    "SCASIA": "SCSI",
+    "SCASSID": "SCSI",
+    "TSPIP":  "TCPIP",
+    "VODX":   "VHDX",
+    "VVPN":   "VPN",
+    "WACC":   "WAC",
 }
 
 # Pre-compiled whole-word, case-insensitive patterns (built once at import time).
