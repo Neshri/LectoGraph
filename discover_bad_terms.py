@@ -74,33 +74,49 @@ def discover_candidates(docs_dir: Path) -> Counter:
 
 async def audit_with_llm(candidates: List[Tuple[str, str]], ollama_url: str, model: str):
     import ollama
-    print(f"Auditing {len(candidates)} near-miss pairs with {model}...")
     
-    pairs_str = "\n".join([f"- {wrong} (liknar {right})" for wrong, right in candidates])
+    # Smaller batches for better feedback and less model strain
+    batch_size = 20
+    all_hallucinations = []
+    total_batches = (len(candidates) + batch_size - 1) // batch_size
     
-    prompt = (
-        "Du är en IT-expert. Jag har hittat ord i transkriptioner som verkar vara "
-        "felavlyssningar (hallucinationer) eftersom de liknar kända IT-begrepp.\n\n"
-        "Din uppgift: Avgör vilka som är faktiska felhörningar och bekräfta rättningen.\n\n"
-        "Returnera resultatet som ett JSON-objekt med fältet 'hallucinations' som är en "
-        "lista av {\"wrong\": \"...\", \"right\": \"...\"} objekt.\n\n"
-        f"Kandidater:\n{pairs_str}\n\n"
-        "Svara ENDAST med JSON."
-    )
-
-    try:
-        client = ollama.AsyncClient(host=ollama_url)
-        response = await client.chat(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            options={"temperature": 0.0}
+    print(f"Auditing {len(candidates)} near-miss pairs with {model} in {total_batches} batches...")
+    
+    for i in range(0, len(candidates), batch_size):
+        current_batch = (i // batch_size) + 1
+        print(f"  -> Processing batch {current_batch}/{total_batches}...", end="", flush=True)
+        
+        batch = candidates[i:i+batch_size]
+        pairs_str = "\n".join([f"- {wrong} vs {right}" for wrong, right in batch])
+        
+        prompt = (
+            "Du är en IT-expert som granskar transkriptionsfel.\n"
+            "Jag har par av ord (Kandidat vs Mål). Vissa är två OLIKA giltiga IT-termer "
+            "(t.ex. 'ACPI' vs 'API'), medan andra är felhörningar (t.ex. 'DOCP' vs 'DHCP').\n\n"
+            "Din uppgift:\n"
+            "1. Om BÅDA orden är legitima och distinkta IT-termer, ignorera paret.\n"
+            "2. Om Kandidaten ser ut som en felstavning/felhörning av Målet, lägg till det i listan.\n"
+            "3. Fokusera särskilt på ord som låter lika fonetiskt.\n\n"
+            f"Par att granska:\n{pairs_str}\n\n"
+            "Svara ENDAST med JSON i formatet: {\"hallucinations\": [{\"wrong\": \"...\", \"right\": \"...\"}]}"
         )
-        content = response.message.content
-        content = re.sub(r"```[a-z]*\n?", "", content).replace("```", "").strip()
-        return json.loads(content).get("hallucinations", [])
-    except Exception as e:
-        print(f"LLM Audit failed: {e}")
-        return []
+
+        try:
+            client = ollama.AsyncClient(host=ollama_url)
+            response = await client.chat(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                options={"temperature": 0.0}
+            )
+            content = response.message.content
+            content = re.sub(r"```[a-z]*\n?", "", content).replace("```", "").strip()
+            res = json.loads(content).get("hallucinations", [])
+            all_hallucinations.extend(res)
+            print(" Done.")
+        except Exception as e:
+            print(f" Failed: {e}")
+            
+    return all_hallucinations
 
 def main():
     parser = argparse.ArgumentParser(description="Discover potential Whisper hallucinations.")
@@ -148,7 +164,7 @@ def main():
         print("No candidates found.")
         return
 
-    print(f"\nFound {len(near_misses)} candidates. Sending to LLM for technical audit...")
+    print(f"\nFound {len(near_misses)} candidates.")
 
     if args.audit:
         import asyncio
