@@ -59,13 +59,13 @@ def main() -> None:
         log_level=logging.INFO,
     )
 
-    from lectograph.pipeline import (
+    from lectograph.quality import (
         _KNOWN_BAD_TERMS,
         _summaries_are_clean,
         _transcript_needs_correction,
         correct_transcript,
-        format_knowledge_doc,
     )
+    from lectograph.document import format_knowledge_doc
 
     # ── Analyze ───────────────────────────────────────────────────────────────
     try:

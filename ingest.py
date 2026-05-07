@@ -219,7 +219,7 @@ async def main_async(args: argparse.Namespace) -> int:
 
     # ── --detect-faulty ───────────────────────────────────────────────────────
     if args.detect_faulty:
-        from lectograph.pipeline import detect_faulty_docs
+        from lectograph.quality import detect_faulty_docs
         faulty = detect_faulty_docs(cfg.docs_dir, state)
         if faulty:
             print(f"\nFound {len(faulty)} document(s) with quality issues (CJK chars or known mishearings):")
@@ -235,7 +235,7 @@ async def main_async(args: argparse.Namespace) -> int:
     reingest_targets: list[str] | None = None
 
     if args.reingest_faulty:
-        from lectograph.pipeline import detect_faulty_docs
+        from lectograph.quality import detect_faulty_docs
         reingest_targets = detect_faulty_docs(cfg.docs_dir, state)
 
         if not reingest_targets:
@@ -311,7 +311,8 @@ async def main_async(args: argparse.Namespace) -> int:
         pass
 
     # ── Build analyzer (loads Whisper — takes a moment) ───────────────────────
-    from lectograph.pipeline import build_analyzer, build_rag, run_ingestion, run_reingest
+    from lectograph.factories import build_analyzer, build_rag
+    from lectograph.pipeline import run_ingestion, run_reingest
     try:
         analyzer = build_analyzer(cfg, logger)
     except Exception as e:
