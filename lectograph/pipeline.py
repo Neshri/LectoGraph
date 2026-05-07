@@ -4,7 +4,7 @@ Core ingestion pipeline.
 Responsibilities:
   - Build the OpenSceneSense analyzer (once, shared across all videos)
   - Build the LightRAG instance (once, shared across all videos)
-  - Loop over pending videos, analyze → format → save doc → ingest
+  - Loop over pending videos, analyze → save doc (always persisted) → correct → ingest
   - Honour a threading.Event stop signal between videos for clean shutdown
   - Report per-video success/failure back to the caller via StateDB
 """
@@ -230,7 +230,14 @@ async def run_ingestion(
             failed.append(filename)
             continue
 
-        # ── Step 1.5: Correct transcript if it contains known-bad terms ───────
+        # ── Step 2: Format + save knowledge document ───────────────────────
+        doc = format_knowledge_doc(video_path, results)
+        doc_path = cfg.docs_dir / (video_path.stem + "_ingested.txt")
+        with open(doc_path, "w", encoding="utf-8") as f:
+            f.write(doc)
+        logger.info(f"  Document saved → {doc_path.name}  ({len(doc):,} chars)")
+
+        # ── Step 3: Correct transcript if it contains known-bad terms ───────
         if _transcript_needs_correction(results.summary.transcript):
             if _summaries_are_clean(results.summary.brief, results.summary.detailed):
                 logger.info("  Transcript contains known-bad terms; summaries are clean — correcting...")
@@ -241,6 +248,11 @@ async def run_ingestion(
                     cfg,
                     logger,
                 )
+                # Re-format and re-save corrected document
+                doc = format_knowledge_doc(video_path, results)
+                with open(doc_path, "w", encoding="utf-8") as f:
+                    f.write(doc)
+                logger.info(f"  Document updated (corrected) → {doc_path.name}")
             else:
                 bad_terms = [
                     t for t in _KNOWN_BAD_TERMS
@@ -256,14 +268,7 @@ async def run_ingestion(
                 failed.append(filename)
                 continue
 
-        # ── Step 2: Format + save knowledge document ───────────────────────
-        doc = format_knowledge_doc(video_path, results)
-        doc_path = cfg.docs_dir / (video_path.stem + "_ingested.txt")
-        with open(doc_path, "w", encoding="utf-8") as f:
-            f.write(doc)
-        logger.info(f"  Document saved → {doc_path}  ({len(doc):,} chars)")
-
-        # ── Step 3: Ingest into LightRAG ───────────────────────────────────
+        # ── Step 4: Ingest into LightRAG ───────────────────────────────────
         # Use the video stem as a stable, predictable doc ID so we can
         # reliably delete/replace this document in the future.
         doc_id = video_path.stem
@@ -312,7 +317,6 @@ _KNOWN_BAD_TERMS: dict[str, str] = {
     "COMFIG": "CONFIG",
     "HTSP":   "HTTP",
     "HTTB":   "HTTP",
-    "HTTPD":  "HTTP",
     "VELAN":  "VLAN",
     "UEFE":   "UEFI",
     "UEFY":   "UEFI",
