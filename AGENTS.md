@@ -2,7 +2,7 @@
 Welcome to the LectoGraph codebase. This file provides context and guidelines to help you write accurate, maintainable, and stylistically consistent code for this project.
 ## Project Overview
 LectoGraph batch-ingests lecture videos into a [LightRAG](https://github.com/HKUDS/LightRAG) knowledge graph, enabling cross-video semantic querying of the course material. 
-It uses a multi-modal pipeline: vision processing (`glm-ocr` for frame analysis), audio transcription (`faster-whisper`), and structured synthesis (`qwen3:32b`).
+It uses a multi-modal pipeline: vision processing (`glm-ocr` for frame analysis), audio transcription (`faster-whisper`), and structured synthesis (`gemma4:31b`).
 ## System Architecture
 *   **Ingestion Pipeline (`ingest.py`, `lectograph/pipeline.py`)**: Asynchronously processes videos through `OpenSceneSense`, formats the output into a knowledge document (to maximize entity extraction), and inserts it into LightRAG.
 *   **Query Pipeline (`query.py`)**: Interfaces with LightRAG to perform semantic searches (modes: `hybrid`, `local`, `global`, `naive`).
@@ -29,4 +29,4 @@ It uses a multi-modal pipeline: vision processing (`glm-ocr` for frame analysis)
 *   **Document Formatting**: The text fed into LightRAG (`format_knowledge_doc`) must be dense, factual prose. Do not include operational metadata (like frame counts or timestamps) as they create junk graph triples and dilute extraction quality.
 *   **Immutable Embeddings**: The `rag_embedding_model` and `rag_embedding_dim` cannot be changed after the database is created without wiping the DB entirely. Treat these as immutable in production code.
 ### 5. AI Hallucination & Patching Rules
-*   If adding new hallucination checks, implement them cleanly in `lectograph/pipeline.py` (e.g., `_is_faulty()`), keeping regex patterns compiled globally to ensure high performance.
+*   If adding new hallucination checks, implement them cleanly in `lectograph/quality.py` (e.g., `_is_faulty()`), keeping regex patterns compiled globally to ensure high performance.
