@@ -47,7 +47,6 @@ _KNOWN_BAD_TERMS: dict[str, str] = {
     "LTLM":   "NTLM",
     "NAWT":   "NAT",
     "OSPFO":  "OSPF",
-    "PINGA":  "PING",
     "RDPL":   "RDP",
     "SCASIA": "SCSI",
     "SCASSID": "SCSI",
