@@ -91,7 +91,7 @@ detailed_summary_prompt: |
 brief_summary_prompt: |
   Skriv en kortfattad och tekniskt korrekt sammanfattning på svenska av vad som
   demonstrerades och förklarades i denna {duration:.1f} sekunder långa IT-lektion.
-  Använd din expertis för att identifiera och korrigera eventuella felhörningar
+  Använd din expertis för att korrigera eventuella felhörningar
   i transkriptionen (t.ex. tekniska termer som blivit felstavade) så att
   sammanfattningen använder professionellt IT-språk.
 
