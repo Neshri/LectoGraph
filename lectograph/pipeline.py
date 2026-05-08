@@ -21,7 +21,7 @@ from .quality import (
     _transcript_needs_correction,
     _summaries_are_clean,
     correct_transcript,
-    _KNOWN_BAD_TERMS,
+    get_bad_terms,
 )
 
 
@@ -118,11 +118,7 @@ async def run_ingestion(
                     f.write(doc)
                 logger.info(f"  Document updated (corrected) → {doc_path.name}")
             else:
-                bad_terms = [
-                    t for t in _KNOWN_BAD_TERMS
-                    if t.lower() in
-                    (results.summary.brief + " " + results.summary.detailed).lower()
-                ]
+                bad_terms = get_bad_terms(results.summary.brief + " " + results.summary.detailed)
                 msg = (
                     f"Bad terms {bad_terms} found in both transcript and summaries — "
                     "summaries unusable as correction reference."

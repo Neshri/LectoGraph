@@ -63,6 +63,17 @@ _BAD_TERM_PATTERNS: list[re.Pattern] = [
 ]
 
 
+def get_bad_terms(text: str) -> list[str]:
+    """Return a list of unique known-bad terms found in *text* using strict word boundaries."""
+    found = []
+    # We iterate over the dictionary keys to return the original term (e.g. "EFAT")
+    # rather than whatever case was used in the text.
+    for term, pattern in zip(_KNOWN_BAD_TERMS, _BAD_TERM_PATTERNS):
+        if pattern.search(text):
+            found.append(term)
+    return found
+
+
 def _is_faulty(text: str) -> bool:
     """Return True if *text* contains CJK characters or any known-bad Whisper term."""
     if _contains_cjk(text):
