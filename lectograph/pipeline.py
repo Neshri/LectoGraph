@@ -134,6 +134,15 @@ async def run_ingestion(
         doc_id = video_path.stem
         logger.info(f"  Inserting into LightRAG knowledge graph (id='{doc_id}')...")
         try:
+            # Check if LightRAG already has a record for this doc_id (e.g. from
+            # a previous failed attempt) and clear it so we don't get 
+            # 'Duplicate document detected' warnings that block ingestion.
+            old_status = await rag.doc_status.get_by_id(doc_id)
+            if old_status:
+                status_str = old_status.get("status", "unknown")
+                logger.info(f"  Clearing existing LightRAG record for '{doc_id}' (previous status: {status_str})")
+                await rag.adelete_by_doc_id(doc_id)
+
             await rag.ainsert(doc, ids=[doc_id])
 
             doc_status = await rag.doc_status.get_by_id(doc_id)
