@@ -5,7 +5,7 @@ LectoGraph — batch video → LightRAG ingestion CLI.
 Usage examples:
   python ingest.py                      # process all pending videos
   python ingest.py --status             # show DB state table and exit
-  python ingest.py --rag-status         # inspect LightRAG's internal doc_status store
+  python ingest.py --rag-status         # inspect LightRAG doc_status (non-processed entries)
   python ingest.py --dry-run            # discover videos, show plan, don't process
   python ingest.py --retry-failed       # re-queue failed videos, then process
   python ingest.py --limit 2            # process at most 2 videos (useful for testing)
@@ -90,9 +90,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--rag-status", action="store_true",
         help=(
-            "Query LightRAG's internal doc_status store and print all entries "
-            "grouped by status. Useful for inspecting ghost FAILED records that "
-            "are invisible to --status (which only reads your SQLite DB)."
+            "Query LightRAG's internal doc_status store. Shows all non-processed "
+            "entries (pending, failed, processing) with full error messages. "
+            "Useful for inspecting failures invisible to --status."
         ),
     )
     return p.parse_args()
@@ -172,26 +172,36 @@ def print_status(state, working_dir: Path | None = None) -> None:
 # ─── LightRAG doc_status inspector ───────────────────────────────────────────
 
 async def print_rag_status(rag) -> None:
-    """Query LightRAG's internal doc_status store and print a grouped table.
+    """Query LightRAG's internal doc_status store and print non-processed entries.
 
-    get_docs_by_status returns dict[str, DocProcessingStatus] — dataclass
-    objects, not plain dicts — so fields are read via getattr().
+    Skips PROCESSED entries — they're working correctly and would flood the output.
+    get_docs_by_status returns dict[str, DocProcessingStatus] dataclass objects.
     """
     from lightrag.base import DocStatus
 
-    # Fetch all known statuses; values are DocProcessingStatus dataclass instances
+    # Fetch all non-processed statuses; values are DocProcessingStatus dataclass instances
     status_groups: dict[str, list] = {}
     for status in DocStatus:
+        if status == DocStatus.PROCESSED:
+            continue
         docs = await rag.doc_status.get_docs_by_status(status)
         if docs:
             status_groups[status.value] = list(docs.items())  # [(doc_id, DocProcessingStatus)]
 
-    if not status_groups:
+    # Fetch the processed count separately just for the summary line
+    processed_docs = await rag.doc_status.get_docs_by_status(DocStatus.PROCESSED)
+    processed_count = len(processed_docs)
+
+    if not status_groups and processed_count == 0:
         print("\nLightRAG doc_status store is empty.\n")
         return
 
-    total = sum(len(v) for v in status_groups.values())
-    print(f"\nLightRAG doc_status — {total} total entries\n")
+    shown = sum(len(v) for v in status_groups.values())
+    print(f"\nLightRAG doc_status — {shown + processed_count} total  ({processed_count} processed, {shown} non-processed)\n")
+
+    if not status_groups:
+        print("  No non-processed entries found.\n")
+        return
 
     for status_name, entries in sorted(status_groups.items()):
         print(f"  {'─' * 70}")
@@ -199,7 +209,7 @@ async def print_rag_status(rag) -> None:
         print(f"  {'─' * 70}")
         for doc_id, doc in entries:
             file_path  = getattr(doc, "file_path", None) or "<unknown source>"
-            summary    = (getattr(doc, "content_summary", None) or "")[:80]
+            summary    = getattr(doc, "content_summary", None) or ""
             error      = getattr(doc, "error_msg", None) or ""
             updated_at = getattr(doc, "updated_at", None) or ""
             metadata   = getattr(doc, "metadata", None) or {}
@@ -207,7 +217,8 @@ async def print_rag_status(rag) -> None:
 
             print(f"    ID      : {doc_id}")
             print(f"    File    : {file_path}")
-            print(f"    Summary : {summary}")
+            if summary:
+                print(f"    Summary : {summary}")
             if updated_at:
                 print(f"    Updated : {updated_at}")
             if is_dup:
@@ -217,8 +228,10 @@ async def print_rag_status(rag) -> None:
                 print(f"    Error   : {error}")
             print()
 
+    counts = {s: len(e) for s, e in status_groups.items()}
+    counts["processed"] = processed_count
     print("  Summary: " + "  ".join(
-        f"{s}: {len(e)}" for s, e in sorted(status_groups.items())
+        f"{s}: {n}" for s, n in sorted(counts.items())
     ) + "\n")
 
 
