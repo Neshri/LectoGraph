@@ -5,6 +5,7 @@ LectoGraph — batch video → LightRAG ingestion CLI.
 Usage examples:
   python ingest.py                      # process all pending videos
   python ingest.py --status             # show DB state table and exit
+  python ingest.py --rag-status         # inspect LightRAG's internal doc_status store
   python ingest.py --dry-run            # discover videos, show plan, don't process
   python ingest.py --retry-failed       # re-queue failed videos, then process
   python ingest.py --limit 2            # process at most 2 videos (useful for testing)
@@ -86,6 +87,14 @@ def parse_args() -> argparse.Namespace:
             "and re-ingest them."
         ),
     )
+    p.add_argument(
+        "--rag-status", action="store_true",
+        help=(
+            "Query LightRAG's internal doc_status store and print all entries "
+            "grouped by status. Useful for inspecting ghost FAILED records that "
+            "are invisible to --status (which only reads your SQLite DB)."
+        ),
+    )
     return p.parse_args()
 
 
@@ -158,6 +167,59 @@ def print_status(state, working_dir: Path | None = None) -> None:
     if rag_doc_ids is not None:
         print(f"  LightRAG docs in store: {len(rag_doc_ids)}")
     print()
+
+
+# ─── LightRAG doc_status inspector ───────────────────────────────────────────
+
+async def print_rag_status(rag) -> None:
+    """Query LightRAG's internal doc_status store and print a grouped table.
+
+    get_docs_by_status returns dict[str, DocProcessingStatus] — dataclass
+    objects, not plain dicts — so fields are read via getattr().
+    """
+    from lightrag.base import DocStatus
+
+    # Fetch all known statuses; values are DocProcessingStatus dataclass instances
+    status_groups: dict[str, list] = {}
+    for status in DocStatus:
+        docs = await rag.doc_status.get_docs_by_status(status)
+        if docs:
+            status_groups[status.value] = list(docs.items())  # [(doc_id, DocProcessingStatus)]
+
+    if not status_groups:
+        print("\nLightRAG doc_status store is empty.\n")
+        return
+
+    total = sum(len(v) for v in status_groups.values())
+    print(f"\nLightRAG doc_status — {total} total entries\n")
+
+    for status_name, entries in sorted(status_groups.items()):
+        print(f"  {'─' * 70}")
+        print(f"  STATUS: {status_name.upper()}  ({len(entries)} entries)")
+        print(f"  {'─' * 70}")
+        for doc_id, doc in entries:
+            file_path  = getattr(doc, "file_path", None) or "<unknown source>"
+            summary    = (getattr(doc, "content_summary", None) or "")[:80]
+            error      = getattr(doc, "error_msg", None) or ""
+            updated_at = getattr(doc, "updated_at", None) or ""
+            metadata   = getattr(doc, "metadata", None) or {}
+            is_dup     = metadata.get("is_duplicate", False)
+
+            print(f"    ID      : {doc_id}")
+            print(f"    File    : {file_path}")
+            print(f"    Summary : {summary}")
+            if updated_at:
+                print(f"    Updated : {updated_at}")
+            if is_dup:
+                orig = metadata.get("original_doc_id", "?")
+                print(f"    Kind    : duplicate ghost (original: {orig})")
+            if error:
+                print(f"    Error   : {error}")
+            print()
+
+    print("  Summary: " + "  ".join(
+        f"{s}: {len(e)}" for s, e in sorted(status_groups.items())
+    ) + "\n")
 
 
 # ─── Main async entry point ───────────────────────────────────────────────────
@@ -254,6 +316,19 @@ async def main_async(args: argparse.Namespace) -> int:
     # ── --status ──────────────────────────────────────────────────────────────
     if args.status:
         print_status(state, cfg.working_dir)
+        state.close()
+        return 0
+
+    # ── --rag-status ──────────────────────────────────────────────────────────
+    if args.rag_status:
+        from lectograph.factories import build_rag
+        try:
+            rag = await build_rag(cfg, logger)
+        except Exception as e:
+            logger.error(f"Failed to initialise LightRAG: {e}", exc_info=True)
+            state.close()
+            return 1
+        await print_rag_status(rag)
         state.close()
         return 0
 
