@@ -6,6 +6,7 @@ Usage examples:
   python ingest.py                      # process all pending videos
   python ingest.py --status             # show DB state table and exit
   python ingest.py --rag-status         # inspect LightRAG doc_status (non-processed entries)
+  python ingest.py --rag-purge-failed   # delete all FAILED entries from LightRAG doc_status
   python ingest.py --dry-run            # discover videos, show plan, don't process
   python ingest.py --retry-failed       # re-queue failed videos, then process
   python ingest.py --limit 2            # process at most 2 videos (useful for testing)
@@ -95,6 +96,14 @@ def parse_args() -> argparse.Namespace:
             "Useful for inspecting failures invisible to --status."
         ),
     )
+    p.add_argument(
+        "--rag-purge-failed", action="store_true",
+        help=(
+            "Delete all FAILED entries from LightRAG's doc_status store. "
+            "Safe to run: these are stale ghost records (e.g. duplicate detection "
+            "artifacts) that no longer serve a purpose."
+        ),
+    )
     return p.parse_args()
 
 
@@ -169,7 +178,7 @@ def print_status(state, working_dir: Path | None = None) -> None:
     print()
 
 
-# ─── LightRAG doc_status inspector ───────────────────────────────────────────
+# ─── LightRAG doc_status inspector & maintenance ─────────────────────────────
 
 async def print_rag_status(rag) -> None:
     """Query LightRAG's internal doc_status store and print non-processed entries.
@@ -233,6 +242,25 @@ async def print_rag_status(rag) -> None:
     print("  Summary: " + "  ".join(
         f"{s}: {n}" for s, n in sorted(counts.items())
     ) + "\n")
+
+
+async def purge_rag_failed(rag) -> int:
+    """Delete all FAILED entries from LightRAG's doc_status store.
+
+    Returns the number of entries deleted.
+    """
+    from lightrag.base import DocStatus
+
+    failed_docs = await rag.doc_status.get_docs_by_status(DocStatus.FAILED)
+    if not failed_docs:
+        print("\nNo FAILED entries in LightRAG doc_status — nothing to purge.\n")
+        return 0
+
+    ids = list(failed_docs.keys())
+    await rag.doc_status.delete(ids)
+    await rag.doc_status.index_done_callback()
+    print(f"\nPurged {len(ids)} FAILED entries from LightRAG doc_status.\n")
+    return len(ids)
 
 
 # ─── Main async entry point ───────────────────────────────────────────────────
@@ -342,6 +370,19 @@ async def main_async(args: argparse.Namespace) -> int:
             state.close()
             return 1
         await print_rag_status(rag)
+        state.close()
+        return 0
+
+    # ── --rag-purge-failed ────────────────────────────────────────────────────
+    if args.rag_purge_failed:
+        from lectograph.factories import build_rag
+        try:
+            rag = await build_rag(cfg, logger)
+        except Exception as e:
+            logger.error(f"Failed to initialise LightRAG: {e}", exc_info=True)
+            state.close()
+            return 1
+        await purge_rag_failed(rag)
         state.close()
         return 0
 
