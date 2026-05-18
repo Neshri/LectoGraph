@@ -81,6 +81,28 @@ def _is_faulty(text: str) -> bool:
     return any(p.search(text) for p in _BAD_TERM_PATTERNS)
 
 
+# Sentinel strings that openscenesense_ollama emits when the audio transcriber
+# crashes or produces no output.  Treat these the same as an empty transcript.
+_TRANSCRIPT_FAILURE_SENTINELS: tuple[str, ...] = (
+    "No audio transcript available.",
+    "No transcript available.",
+    "Audio transcription failed.",
+)
+
+
+def _is_failed_transcript(transcript: str) -> bool:
+    """Return True if the transcript is empty or a known failure sentinel.
+
+    openscenesense_ollama can swallow Whisper crashes and return a placeholder
+    string instead of raising an exception.  This check prevents such failures
+    from being silently ingested as valid knowledge documents.
+    """
+    stripped = transcript.strip()
+    if not stripped:
+        return True
+    return any(stripped == sentinel for sentinel in _TRANSCRIPT_FAILURE_SENTINELS)
+
+
 def _transcript_needs_correction(transcript: str) -> bool:
     """Return True if the raw Whisper transcript contains any known-bad term."""
     return any(p.search(transcript) for p in _BAD_TERM_PATTERNS)
@@ -284,6 +306,16 @@ def detect_faulty_docs(docs_dir: Path, state: StateDB) -> list[str]:
             continue
 
         if _is_faulty(content):
+            faulty.append(stem_to_filename[stem])
+            continue
+
+        # Also flag documents whose transcript section is a failure sentinel
+        # (e.g. Whisper crashed and openscenesense filled in the placeholder).
+        transcript_section = ""
+        marker = "## Transkription (vad som sades)"
+        if marker in content:
+            transcript_section = content.split(marker, 1)[1].strip()
+        if _is_failed_transcript(transcript_section):
             faulty.append(stem_to_filename[stem])
 
     return faulty

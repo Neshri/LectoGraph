@@ -18,6 +18,7 @@ from .config import Config
 from .state import StateDB
 from .document import format_knowledge_doc
 from .quality import (
+    _is_failed_transcript,
     _transcript_needs_correction,
     _summaries_are_clean,
     correct_transcript,
@@ -90,6 +91,15 @@ async def run_ingestion(
         except Exception as exc:
             msg = f"Analysis error: {exc}"
             logger.error(f"  {msg}", exc_info=True)
+            state.mark_failed(filename, msg)
+            failed.append(filename)
+            continue
+
+        # ── Step 1b: Validate transcript ───────────────────────────────────
+        transcript = results.summary.transcript
+        if _is_failed_transcript(transcript):
+            msg = f"Whisper transcription failed or returned a sentinel: {transcript!r}"
+            logger.error(f"  {msg}")
             state.mark_failed(filename, msg)
             failed.append(filename)
             continue

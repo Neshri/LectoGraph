@@ -46,15 +46,20 @@ class FasterWhisperAdapter(AudioTranscriber):
         )
         
         transcribed_segments = []
-        for segment in segments_generator:
-            transcribed_segments.append(
-                AudioSegment(
-                    text=segment.text.strip(),
-                    start_time=segment.start,
-                    end_time=segment.end,
-                    confidence=1.0
+        try:
+            for segment in segments_generator:
+                transcribed_segments.append(
+                    AudioSegment(
+                        text=segment.text.strip(),
+                        start_time=segment.start,
+                        end_time=segment.end,
+                        confidence=1.0
+                    )
                 )
-            )
+        except Exception as exc:
+            raise RuntimeError(
+                f"faster-whisper failed mid-stream for {video_path}: {exc}"
+            ) from exc
 
         self.logger.info(f"Transcription complete: {len(transcribed_segments)} segments")
         return transcribed_segments
